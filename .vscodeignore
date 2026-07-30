@@ -1,6 +1,5 @@
 .vscode/**
 .claude/**
-.github/**
 scripts/**
 src/**
 out/**/*.map
