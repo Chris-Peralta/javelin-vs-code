@@ -3,10 +3,12 @@ import * as fs from "fs";
 import * as path from "path";
 import { logError, logInfo } from "./logger";
 
-/** Best-effort signal for whether VS Code (any window) has OS focus - works around `vscode.window.state.focused` getting stuck true for a window that lost focus without a blur event. */
-/** Each window writes only its own entry (never a shared scalar), so one window's write can't clobber another's; see applySharedState() for how the holder is derived from that. */
+/** Best-effort signal for whether *this* window has OS focus - cross-window coordination only corrects a `vscode.window.state.focused` stuck true after a missed blur event. */
+/** Each window writes only its own file, so concurrent writers never race; see applySharedState() for how the holder is derived. */
 /** Entries older than this are treated as a dead window's leftovers, not a live claim. */
 const MAX_SHARED_STATE_AGE_MS = 5000;
+const FOCUS_FILE_PREFIX = "focus-";
+const FOCUS_FILE_SUFFIX = ".json";
 
 interface FocusEntry {
   focused: boolean;
@@ -19,7 +21,7 @@ type SharedFocusState = Record<string, FocusEntry>;
 export type WindowStateSource = Pick<typeof vscode.window, "state" | "onDidChangeWindowState">;
 
 export class AppFocusTracker implements vscode.Disposable {
-  private readonly lockFilePath: string;
+  private readonly ownFilePath: string;
   private readonly lockDir: string;
   private readonly windowId: string;
   private focused: boolean;
@@ -28,7 +30,7 @@ export class AppFocusTracker implements vscode.Disposable {
   private disposed = false;
   private writeQueue: Promise<void> = Promise.resolve();
 
-  /** @param windowId - Identifies this window's entry in the shared state; defaults to this process's pid, one per window. */
+  /** @param windowId - Identifies this window's own file in the lock directory; defaults to this process's pid, one per window. */
   constructor(
     context: vscode.ExtensionContext,
     windowId: string = String(process.pid),
@@ -37,7 +39,7 @@ export class AppFocusTracker implements vscode.Disposable {
     this.windowId = windowId;
     this.focused = windowStateSource.state.focused;
     this.lockDir = context.globalStorageUri.fsPath;
-    this.lockFilePath = path.join(this.lockDir, "focus-state.json");
+    this.ownFilePath = path.join(this.lockDir, `${FOCUS_FILE_PREFIX}${encodeURIComponent(windowId)}${FOCUS_FILE_SUFFIX}`);
 
     this.disposables.push(
       windowStateSource.onDidChangeWindowState((e) => this.onLocalStateChange(e.focused))
@@ -48,7 +50,7 @@ export class AppFocusTracker implements vscode.Disposable {
     });
   }
 
-  /** Best-effort signal for whether VS Code (any window) currently has OS focus. */
+  /** Best-effort signal for whether this specific window currently has OS focus. */
   isFocused(): boolean {
     return this.focused;
   }
@@ -65,13 +67,15 @@ export class AppFocusTracker implements vscode.Disposable {
     await fs.promises.mkdir(this.lockDir, { recursive: true });
     if (this.disposed) return;
 
-    await this.readSharedState();
+    // Publish before reading, so a window with genuinely fresh focus isn't outvoted by an older sibling claim.
+    await this.writeSharedState(this.focused);
     if (this.disposed) return;
 
-    // Watch the directory, not the file, so this doesn't throw before any window has written it.
+    // Watch the directory, not a specific file, so this doesn't throw before any window has written one,
+    // and so it picks up every sibling window's file, not just this window's own.
     const dirWatcher = fs.watch(this.lockDir, (_event, filename) => {
       if (this.disposed) return;
-      if (filename === path.basename(this.lockFilePath)) {
+      if (filename && filename.startsWith(FOCUS_FILE_PREFIX) && filename.endsWith(FOCUS_FILE_SUFFIX)) {
         void this.readSharedState();
       }
     });
@@ -81,8 +85,7 @@ export class AppFocusTracker implements vscode.Disposable {
     }
     this.dirWatcher = dirWatcher;
 
-    // Establish a baseline in case this is the only window open so far.
-    await this.writeSharedState(this.focused);
+    await this.readSharedState();
   }
 
   private onLocalStateChange(focused: boolean): void {
@@ -93,14 +96,27 @@ export class AppFocusTracker implements vscode.Disposable {
   }
 
   private async readSharedState(): Promise<void> {
+    let files: string[];
     try {
-      const raw = await fs.promises.readFile(this.lockFilePath, "utf8");
-      const data = JSON.parse(raw) as SharedFocusState;
-      this.applySharedState(data);
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    } catch (err) {
-      // File may not exist yet, or a write from another window may be in flight; keep current state.
+      files = await fs.promises.readdir(this.lockDir);
+    } catch {
+      // Directory may not exist yet.
+      return;
     }
+
+    const data: SharedFocusState = {};
+    for (const file of files) {
+      if (!file.startsWith(FOCUS_FILE_PREFIX) || !file.endsWith(FOCUS_FILE_SUFFIX)) continue;
+      const id = decodeURIComponent(file.slice(FOCUS_FILE_PREFIX.length, -FOCUS_FILE_SUFFIX.length));
+      try {
+        const raw = await fs.promises.readFile(path.join(this.lockDir, file), "utf8");
+        data[id] = JSON.parse(raw) as FocusEntry;
+      } catch {
+        // File may have been mid-write when read, or removed since readdir(); skip it this round.
+      }
+    }
+
+    this.applySharedState(data);
   }
 
   /** Derives the current holder from every window's latest entry: a claim always wins; a release only clears the holder it matches. */
@@ -130,7 +146,7 @@ export class AppFocusTracker implements vscode.Disposable {
       }
     }
 
-    const focused = holder !== null;
+    const focused = holder === this.windowId;
     if (focused !== this.focused) {
       logInfo(`AppFocusTracker: derived focus changed ${this.focused} -> ${focused} (holder ${holder ?? "none"})`);
     }
@@ -140,20 +156,10 @@ export class AppFocusTracker implements vscode.Disposable {
   private writeSharedState(focused: boolean): Promise<void> {
     const timestamp = Date.now();
 
-    // Chain writes so they land in call order, each merging with other windows' entries.
+    // Chain writes so they land in call order; no read-modify-write needed since this file is ours alone.
     this.writeQueue = this.writeQueue.then(async () => {
       try {
-        let data: SharedFocusState = {};
-        try {
-          const raw = await fs.promises.readFile(this.lockFilePath, "utf8");
-          data = JSON.parse(raw) as SharedFocusState;
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        } catch (err) {
-          // No file yet.
-        }
-
-        data[this.windowId] = { focused, timestamp };
-        await fs.promises.writeFile(this.lockFilePath, JSON.stringify(data));
+        await fs.promises.writeFile(this.ownFilePath, JSON.stringify({ focused, timestamp }));
       } catch (err) {
         logError("AppFocusTracker: failed to write shared focus state", err);
       }
