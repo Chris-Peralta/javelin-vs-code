@@ -50,29 +50,4 @@ const window = {
   },
 };
 
-const Uri = {
-  joinPath(base, ...segments) {
-    return { fsPath: [base && base.fsPath, ...segments].filter(Boolean).join("/") };
-  },
-};
-
-const commands = {
-  executeCommand() {},
-};
-
-// vscode.workspace.workspaceFolders is undefined until a folder/workspace is open -
-// default to that so tests reflect the "nothing open" starting state.
-let workspaceFolders;
-const workspaceFoldersEmitter = new EventEmitter();
-const workspace = {
-  get workspaceFolders() {
-    return workspaceFolders;
-  },
-  onDidChangeWorkspaceFolders: workspaceFoldersEmitter.event,
-  __setWorkspaceFolders(folders) {
-    workspaceFolders = folders;
-    workspaceFoldersEmitter.fire();
-  },
-};
-
-module.exports = { Disposable, EventEmitter, window, Uri, commands, workspace };
+module.exports = { Disposable, EventEmitter, window };
