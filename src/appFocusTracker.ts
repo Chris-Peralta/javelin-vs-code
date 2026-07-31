@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
-import { logError } from "./logger";
+import { logError, logInfo } from "./logger";
 
 /**
  * WORKAROUND - when a second
@@ -81,6 +81,7 @@ export class AppFocusTracker implements vscode.Disposable {
   }
 
   private onLocalStateChange(focused: boolean): void {
+    logInfo(`AppFocusTracker: local window focus changed to ${focused}`);
     // Trust our own observation of our own window's focus unconditionally - it's
     // only *other* windows that can get stuck per the bug above.
     this.focused = focused;
@@ -95,6 +96,13 @@ export class AppFocusTracker implements vscode.Disposable {
 
       // Don't let a stale leftover file (e.g. from a force-quit) beat lastKnownTimestamp's initial 0.
       if (Date.now() - data.timestamp > MAX_SHARED_STATE_AGE_MS) return;
+
+      if (data.focused !== this.focused) {
+        logInfo(
+          `AppFocusTracker: shared state overwrote local focused ${this.focused} -> ${data.focused} ` +
+            `(shared timestamp ${data.timestamp})`
+        );
+      }
 
       this.lastKnownTimestamp = data.timestamp;
       this.focused = data.focused;

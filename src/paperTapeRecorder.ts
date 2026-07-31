@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { JavelinHidDevice, type JavPaperTapeEventDetail } from "./javelinHidDevice";
+import { logInfo } from "./logger";
 import { JavelinSettings } from "./settings";
 
 export interface PaperTapeEntry {
@@ -59,6 +60,11 @@ export class PaperTapeRecorder {
     private readonly getFocused: () => boolean = () => vscode.window.state.focused,
     private readonly workspaceState?: vscode.Memento
   ) {
+    logInfo(
+      `PaperTapeRecorder initializing: persistPerWindow=${this.settings.persistPerWindow}, ` +
+        `workspaceState=${this.workspaceState ? "available" : "unavailable"}`
+    );
+
     if (this.settings.persistPerWindow) {
       this.loadPersistedEntries();
     }
@@ -109,10 +115,14 @@ export class PaperTapeRecorder {
   }
 
   private onPaperTape = (ev: CustomEvent<JavPaperTapeEventDetail>) => {
-    // Unless background monitoring is enabled, only record strokes while VS Code is focused.
-    if (!this.settings.backgroundMonitoring && !this.getFocused()) return;
-
     const detail = ev.detail;
+
+    // Unless background monitoring is enabled, only record strokes while VS Code is focused.
+    if (!this.settings.backgroundMonitoring && !this.getFocused()) {
+      logInfo(`Dropped paper_tape event (window not focused): outline="${detail.outline ?? ""}"`);
+      return;
+    }
+
     const entry: PaperTapeEntry = {
       id: this.nextId++,
       outline: detail.outline ?? "",
@@ -122,6 +132,7 @@ export class PaperTapeRecorder {
       timestamp: Date.now(),
     };
 
+    logInfo(`Recorded paper_tape event: outline="${entry.outline}" translation="${entry.translation}"`);
     this.entries.push(entry);
     if (this.entries.length > MAX_ENTRIES) {
       this.entries.shift();
@@ -140,6 +151,7 @@ export class PaperTapeRecorder {
     if (!this.workspaceState) return;
 
     const saved = this.workspaceState.get<PaperTapeEntry[]>(PERSISTED_ENTRIES_KEY, []);
+    logInfo(`Loaded ${saved.length} persisted paper tape entries from workspaceState`);
     if (saved.length === 0) return;
 
     this.entries.push(...saved.slice(-MAX_ENTRIES));
@@ -166,5 +178,6 @@ export class PaperTapeRecorder {
     const merged = mergeForPersist(onDisk, this.entries);
 
     await this.workspaceState.update(PERSISTED_ENTRIES_KEY, merged);
+    logInfo(`Persisted ${merged.length} paper tape entries to workspaceState${clearing ? " (after clear)" : ""}`);
   }
 }

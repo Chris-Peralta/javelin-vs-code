@@ -3,7 +3,7 @@
 
 import yaml from "js-yaml";
 import { HIDAsync, devices, devicesAsync, type Device as NodeHidDeviceInfo } from "node-hid";
-import { logError } from "./logger";
+import { logError, logInfo } from "./logger";
 
 /**
  * Whether HID access is available in this environment.
@@ -551,7 +551,9 @@ export class JavelinHidDevice extends EventTarget {
       return;
     }
 
-    this.checkForConnections();
+    this.checkForConnections().catch((err) => {
+      logError("Initial device connection attempt failed:", err);
+    });
     this.startHotplugWatcher();
   }
 
@@ -870,6 +872,7 @@ export class JavelinHidDevice extends EventTarget {
     if (this.connected) return;
 
     const matches = await this.findMatchingDevices();
+    logInfo(`checkForConnections: found ${matches.length} matching device(s)`);
     if (matches.length === 1) {
       await this.openDevice(matches[0]);
     }
@@ -924,6 +927,7 @@ export class JavelinHidDevice extends EventTarget {
       throw new Error("Matched HID device has no path to open");
     }
     const path = info.path;
+    logInfo(`Opening HID device at path ${path}`);
 
     this.connectPromise = (async () => {
       const device = await this.openDeviceWithRetry(path);
@@ -938,11 +942,18 @@ export class JavelinHidDevice extends EventTarget {
 
       await this.setupDevice();
       this.connected = true;
+      logInfo(
+        `Connected to HID device at path ${path}` +
+          (this.connectionId ? ` (connectionId ${this.connectionId})` : " (no connectionId)")
+      );
       this.emit("connected", info);
     })();
 
     try {
       await this.connectPromise;
+    } catch (err) {
+      logError(`Failed to open HID device at path ${path}:`, err);
+      throw err;
     } finally {
       this.connectPromise = null;
     }
@@ -964,6 +975,8 @@ export class JavelinHidDevice extends EventTarget {
     } catch (err) {
       // Device may already be gone; ignore close errors
     }
+
+    logInfo(`Disconnected from HID device${info ? ` at path ${info.path}` : ""}`);
 
     if (info) {
       this.emit("disconnected", info);
