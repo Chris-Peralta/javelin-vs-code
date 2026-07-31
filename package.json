@@ -50,7 +50,8 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "package": "vsce package"
+    "package": "vsce package",
+    "test": "node --require tsx/cjs --require ./test/register.cjs --test \"test/**/*.test.ts\""
   },
   "dependencies": {
     "js-yaml": "^5.2.2",

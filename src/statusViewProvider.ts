@@ -43,6 +43,8 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
           void this.settings.setShowTimestamps(!!message.value);
         } else if (message.type === "setBackgroundMonitoring") {
           void this.settings.setBackgroundMonitoring(!!message.value);
+        } else if (message.type === "setPersistPerWindow") {
+          void this.settings.setPersistPerWindow(!!message.value);
         }
       }
     );
@@ -74,6 +76,7 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
       type: "settings",
       showTimestamps: this.settings.showTimestamps,
       backgroundMonitoring: this.settings.backgroundMonitoring,
+      persistPerWindow: this.settings.persistPerWindow,
     });
   }
 
@@ -176,7 +179,11 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
       </label>
       <label class="settingRow">
         <input type="checkbox" id="toggleBackgroundMonitoring" />
-        Record paper tape while VS Code is in the background
+        Record paper tape while VS Code is in the background (requires per-window paper tape off)
+      </label>
+      <label class="settingRow">
+        <input type="checkbox" id="togglePersistPerWindow" />
+        Save a separate paper tape per window (requires background recording off)
       </label>
     </div>
   </details>

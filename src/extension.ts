@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { AppFocusTracker } from "./appFocusTracker";
 import { isHidSupported, JavelinHidDevice } from "./javelinHidDevice";
 import { PaperTapePanel } from "./paperTapePanel";
 import { PaperTapeRecorder } from "./paperTapeRecorder";
@@ -8,6 +9,7 @@ import { StatusViewProvider } from "./statusViewProvider";
 let device: JavelinHidDevice | undefined;
 let recorder: PaperTapeRecorder | undefined;
 let settings: JavelinSettings | undefined;
+let focusTracker: AppFocusTracker | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
   if (isHidSupported()) {
@@ -16,7 +18,16 @@ export function activate(context: vscode.ExtensionContext) {
 
   const currentSettings = new JavelinSettings(context);
   settings = currentSettings;
-  recorder = new PaperTapeRecorder(device, currentSettings);
+
+  const currentFocusTracker = new AppFocusTracker(context);
+  focusTracker = currentFocusTracker;
+
+  recorder = new PaperTapeRecorder(
+    device,
+    currentSettings,
+    () => currentFocusTracker.isFocused(),
+    context.workspaceState
+  );
 
   const statusViewProvider = new StatusViewProvider(context.extensionUri, device, currentSettings);
   context.subscriptions.push(
@@ -32,7 +43,8 @@ export function activate(context: vscode.ExtensionContext) {
 
 export async function deactivate(): Promise<void> {
   PaperTapePanel.disposeCurrent();
-  recorder?.dispose();
+  await recorder?.dispose();
   settings?.dispose();
+  focusTracker?.dispose();
   await device?.destroy();
 }

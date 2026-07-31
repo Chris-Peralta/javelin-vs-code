@@ -9,6 +9,7 @@
   const lookupResults = document.getElementById("lookupResults");
   const toggleTimestamps = document.getElementById("toggleTimestamps");
   const toggleBackgroundMonitoring = document.getElementById("toggleBackgroundMonitoring");
+  const togglePersistPerWindow = document.getElementById("togglePersistPerWindow");
 
   function setStatus(connected, deviceName, error) {
     if (error) {
@@ -27,9 +28,12 @@
     vscode.postMessage({ type: "showPaperTape" });
   });
 
-  function setSettings(showTimestamps, backgroundMonitoring) {
+  function setSettings(showTimestamps, backgroundMonitoring, persistPerWindow) {
     toggleTimestamps.checked = !!showTimestamps;
     toggleBackgroundMonitoring.checked = !!backgroundMonitoring;
+    togglePersistPerWindow.checked = !!persistPerWindow;
+    toggleBackgroundMonitoring.disabled = !!persistPerWindow;
+    togglePersistPerWindow.disabled = !!backgroundMonitoring;
   }
 
   toggleTimestamps.addEventListener("change", () => {
@@ -40,6 +44,13 @@
     vscode.postMessage({
       type: "setBackgroundMonitoring",
       value: toggleBackgroundMonitoring.checked,
+    });
+  });
+
+  togglePersistPerWindow.addEventListener("change", () => {
+    vscode.postMessage({
+      type: "setPersistPerWindow",
+      value: togglePersistPerWindow.checked,
     });
   });
 
@@ -106,7 +117,7 @@
       latestReceivedRequestId = message.requestId;
       renderLookupResults(message.results ?? [], message.error);
     } else if (message.type === "settings") {
-      setSettings(message.showTimestamps, message.backgroundMonitoring);
+      setSettings(message.showTimestamps, message.backgroundMonitoring, message.persistPerWindow);
     }
   });
 
