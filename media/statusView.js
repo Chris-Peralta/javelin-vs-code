@@ -4,6 +4,7 @@
 
   const statusEl = document.getElementById("status");
   const statusText = document.getElementById("statusText");
+  const noFolderWarning = document.getElementById("noFolderWarning");
   const showButton = document.getElementById("showPaperTape");
   const lookupInput = document.getElementById("lookupInput");
   const lookupResults = document.getElementById("lookupResults");
@@ -118,6 +119,8 @@
       renderLookupResults(message.results ?? [], message.error);
     } else if (message.type === "settings") {
       setSettings(message.showTimestamps, message.backgroundMonitoring, message.persistPerWindow);
+    } else if (message.type === "workspace") {
+      noFolderWarning.classList.toggle("hidden", !!message.hasFolder);
     }
   });
 

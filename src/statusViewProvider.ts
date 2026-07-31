@@ -35,6 +35,7 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
         if (message.type === "ready") {
           this.postStatus();
           this.postSettings();
+          this.postWorkspace();
         } else if (message.type === "showPaperTape") {
           void vscode.commands.executeCommand("javelin.showPaperTape");
         } else if (message.type === "lookup") {
@@ -55,6 +56,7 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
     }
 
     this.disposables.push(this.settings.onDidChange(() => this.postSettings()));
+    this.disposables.push(vscode.workspace.onDidChangeWorkspaceFolders(() => this.postWorkspace()));
 
     webviewView.onDidDispose(() => {
       if (this.device) {
@@ -77,6 +79,14 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
       showTimestamps: this.settings.showTimestamps,
       backgroundMonitoring: this.settings.backgroundMonitoring,
       persistPerWindow: this.settings.persistPerWindow,
+    });
+  }
+
+  private postWorkspace() {
+    if (!this.view) return;
+    void this.view.webview.postMessage({
+      type: "workspace",
+      hasFolder: (vscode.workspace.workspaceFolders?.length ?? 0) > 0,
     });
   }
 
@@ -162,6 +172,7 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
     <span id="statusDot" class="dot"></span>
     <span id="statusText">Disconnected</span>
   </div>
+  <div id="noFolderWarning" class="hidden">Open a folder or workspace to record the paper tape.</div>
   <button id="showPaperTape">Show Paper Tape</button>
   <details id="lookup" class="accordion">
     <summary>Look Up</summary>

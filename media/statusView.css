@@ -36,6 +36,20 @@ body {
   color: var(--vscode-testing-iconFailed, var(--vscode-errorForeground));
 }
 
+#noFolderWarning {
+  padding: 4px 6px;
+  margin-bottom: 12px;
+  background: var(--vscode-inputValidation-warningBackground);
+  color: var(--vscode-inputValidation-warningForeground, var(--vscode-foreground));
+  border: 1px solid var(--vscode-inputValidation-warningBorder, transparent);
+  border-radius: 2px;
+  font-size: 0.9em;
+}
+
+#noFolderWarning.hidden {
+  display: none;
+}
+
 #showPaperTape {
   width: 100%;
   padding: 6px 10px;
