@@ -1,9 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import type * as vscode from "vscode";
 import { PaperTapeRecorder } from "../src/paperTapeRecorder";
 import type { JavelinHidDevice, JavPaperTapeEventDetail } from "../src/javelinHidDevice";
-import { JavelinSettings } from "../src/settings";
+import { JavelinSettings, type JavelinSettingsSnapshot } from "../src/settings";
 import { FakeMemento } from "./fakeMemento";
 
 /** Stands in for JavelinHidDevice: records listeners and lets tests fire fake strokes. */
@@ -27,8 +30,16 @@ class FakeDevice {
   }
 }
 
-function makeSettings(initial: Record<string, unknown> = {}): JavelinSettings {
-  return new JavelinSettings({ globalState: new FakeMemento(initial) } as unknown as vscode.ExtensionContext);
+function makeSettings(initial: Partial<JavelinSettingsSnapshot> = {}): JavelinSettings {
+  // Own storage dir per call - these tests don't exercise cross-window settings sync.
+  const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), "javelin-recorder-settings-"));
+  if (Object.keys(initial).length > 0) {
+    fs.writeFileSync(
+      path.join(storageDir, "settings.json"),
+      JSON.stringify({ showTimestamps: false, backgroundMonitoring: false, persistPerWindow: false, ...initial })
+    );
+  }
+  return new JavelinSettings({ globalStorageUri: { fsPath: storageDir } } as unknown as vscode.ExtensionContext);
 }
 
 function flushMicrotasks(): Promise<void> {
@@ -56,7 +67,7 @@ test("does not record while unfocused, with backgroundMonitoring off", () => {
 
 test("records even while unfocused when backgroundMonitoring is on", () => {
   const device = new FakeDevice();
-  const settings = makeSettings({ "javelin.backgroundMonitoring": true });
+  const settings = makeSettings({ backgroundMonitoring: true });
   const recorder = new PaperTapeRecorder(device as unknown as JavelinHidDevice, settings, () => false);
 
   device.strike();
@@ -84,7 +95,7 @@ test("does not persist to workspaceState when persistPerWindow is off", async ()
 test("persists new entries to workspaceState when persistPerWindow is on", async () => {
   const device = new FakeDevice();
   const workspaceState = new FakeMemento();
-  const settings = makeSettings({ "javelin.persistPerWindow": true });
+  const settings = makeSettings({ persistPerWindow: true });
   const recorder = new PaperTapeRecorder(
     device as unknown as JavelinHidDevice,
     settings,
@@ -113,7 +124,7 @@ test("loads previously persisted entries on construction when persistPerWindow i
       { id: 2, outline: "KWRO", dictionary: "main.json", translation: "you", undo: 0, timestamp: 2 },
     ],
   });
-  const settings = makeSettings({ "javelin.persistPerWindow": true });
+  const settings = makeSettings({ persistPerWindow: true });
   const recorder = new PaperTapeRecorder(undefined, settings, () => true, workspaceState);
 
   assert.deepEqual(
@@ -141,7 +152,7 @@ test("a stroke recorded after loading persisted entries gets a fresh, non-collid
     ],
   });
   const device = new FakeDevice();
-  const settings = makeSettings({ "javelin.persistPerWindow": true });
+  const settings = makeSettings({ persistPerWindow: true });
   const recorder = new PaperTapeRecorder(device as unknown as JavelinHidDevice, settings, () => true, workspaceState);
 
   device.strike("PWAOEUP", "paper");
@@ -153,7 +164,7 @@ test("a stroke recorded after loading persisted entries gets a fresh, non-collid
 test("clear() empties the tape and persists the cleared state", async () => {
   const device = new FakeDevice();
   const workspaceState = new FakeMemento();
-  const settings = makeSettings({ "javelin.persistPerWindow": true });
+  const settings = makeSettings({ persistPerWindow: true });
   const recorder = new PaperTapeRecorder(
     device as unknown as JavelinHidDevice,
     settings,
@@ -254,16 +265,16 @@ test("turning persistPerWindow on mid-session does not discard entries persisted
 });
 
 test("a window persisting its own strokes does not overwrite another window's already-committed entries", async () => {
-  // workspaceState is shared by every window on the workspace (see settings.test.ts's
-  // cross-window model). Window B activates with persistPerWindow off so it doesn't
-  // eagerly load A's entry, then turns persistence on and must merge with A's write.
+  // workspaceState is shared by every window on the workspace. Window B activates with
+  // persistPerWindow off so it doesn't eagerly load A's entry, then turns persistence
+  // on and must merge with A's write.
   const disk = new FakeMemento();
 
   const deviceA = new FakeDevice();
   const workspaceStateA = new FakeMemento(disk.snapshot());
   const recorderA = new PaperTapeRecorder(
     deviceA as unknown as JavelinHidDevice,
-    makeSettings({ "javelin.persistPerWindow": true }),
+    makeSettings({ persistPerWindow: true }),
     () => true,
     workspaceStateA
   );
