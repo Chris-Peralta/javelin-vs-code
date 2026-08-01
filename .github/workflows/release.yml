@@ -17,7 +17,26 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile
+        run: npm run compile
+
+      - name: Run tests
+        run: npm test
+
   bump-version:
+    needs: test
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.bump.outputs.version }}
