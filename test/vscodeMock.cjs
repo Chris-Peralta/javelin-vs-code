@@ -50,4 +50,10 @@ const window = {
   },
 };
 
-module.exports = { Disposable, EventEmitter, window };
+const Uri = {
+  joinPath(base, ...segments) {
+    return { fsPath: [base.fsPath ?? base, ...segments].join("/") };
+  },
+};
+
+module.exports = { Disposable, EventEmitter, window, Uri };

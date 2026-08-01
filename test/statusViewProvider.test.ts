@@ -1,0 +1,114 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import type * as vscode from "vscode";
+import { StatusViewProvider } from "../src/statusViewProvider";
+import type { JavelinHidDevice } from "../src/javelinHidDevice";
+import type { JavelinSettings } from "../src/settings";
+
+/** Stands in for JavelinHidDevice: records listeners and lets tests fire fake connection events. */
+class FakeDevice {
+  connected = false;
+  private readonly listeners = new Map<string, Set<(ev: CustomEvent) => void>>();
+
+  on(type: string, listener: (ev: CustomEvent) => void): void {
+    if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+    this.listeners.get(type)!.add(listener);
+  }
+
+  off(type: string, listener: (ev: CustomEvent) => void): void {
+    this.listeners.get(type)?.delete(listener);
+  }
+
+  fire(type: string, detail: unknown): void {
+    for (const listener of this.listeners.get(type) ?? []) {
+      listener(new CustomEvent(type, { detail }));
+    }
+  }
+}
+
+/** Stands in for JavelinSettings: enough surface for StatusViewProvider to subscribe to. */
+class FakeSettings {
+  showTimestamps = false;
+  backgroundMonitoring = false;
+  persistPerWindow = false;
+
+  onDidChange(): vscode.Disposable {
+    return { dispose() {} };
+  }
+}
+
+/** Stands in for vscode.WebviewView: records every message posted to the webview. */
+class FakeWebviewView {
+  readonly messages: Record<string, unknown>[] = [];
+  private disposeListener: (() => void) | undefined;
+
+  webview = {
+    options: undefined as unknown,
+    html: "",
+    cspSource: "vscode-resource:",
+    asWebviewUri: (uri: unknown) => uri,
+    postMessage: (msg: Record<string, unknown>) => {
+      this.messages.push(msg);
+      return Promise.resolve(true);
+    },
+    onDidReceiveMessage: () => ({ dispose() {} }),
+  };
+
+  onDidDispose(listener: () => void): vscode.Disposable {
+    this.disposeListener = listener;
+    return { dispose() {} };
+  }
+
+  lastStatusMessage(): Record<string, unknown> {
+    const status = [...this.messages].reverse().find((m) => m.type === "status");
+    assert.ok(status, "expected a status message to have been posted");
+    return status!;
+  }
+}
+
+function makeProvider(device: FakeDevice): { provider: StatusViewProvider; webviewView: FakeWebviewView } {
+  const provider = new StatusViewProvider(
+    { fsPath: "/ext" } as unknown as vscode.Uri,
+    device as unknown as JavelinHidDevice,
+    new FakeSettings() as unknown as JavelinSettings
+  );
+  const webviewView = new FakeWebviewView();
+  provider.resolveWebviewView(webviewView as unknown as vscode.WebviewView);
+  return { provider, webviewView };
+}
+
+test("a connection error is reported as disconnected with the error message", () => {
+  const device = new FakeDevice();
+  const { webviewView } = makeProvider(device);
+
+  device.fire("connectionError", { message: "Permission denied opening HID device" });
+
+  const status = webviewView.lastStatusMessage();
+  assert.equal(status.connected, false);
+  assert.equal(status.connectionError, "Permission denied opening HID device");
+});
+
+test("a connection error is cleared once the device connects successfully", () => {
+  const device = new FakeDevice();
+  const { webviewView } = makeProvider(device);
+
+  device.fire("connectionError", { message: "Permission denied opening HID device" });
+  device.connected = true;
+  device.fire("connected", { product: "Javelin" });
+
+  const status = webviewView.lastStatusMessage();
+  assert.equal(status.connected, true);
+  assert.equal(status.connectionError, undefined);
+});
+
+test("a plain disconnect (no prior error) does not report a connection error", () => {
+  const device = new FakeDevice();
+  const { webviewView } = makeProvider(device);
+
+  device.connected = false;
+  device.fire("disconnected", { product: "Javelin" });
+
+  const status = webviewView.lastStatusMessage();
+  assert.equal(status.connected, false);
+  assert.equal(status.connectionError, undefined);
+});

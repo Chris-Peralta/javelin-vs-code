@@ -4,6 +4,8 @@
 
   const statusEl = document.getElementById("status");
   const statusText = document.getElementById("statusText");
+  const troubleshootingEl = document.getElementById("troubleshooting");
+  const connectionErrorText = document.getElementById("connectionErrorText");
   const showButton = document.getElementById("showPaperTape");
   const lookupInput = document.getElementById("lookupInput");
   const lookupResults = document.getElementById("lookupResults");
@@ -11,7 +13,7 @@
   const toggleBackgroundMonitoring = document.getElementById("toggleBackgroundMonitoring");
   const togglePersistPerWindow = document.getElementById("togglePersistPerWindow");
 
-  function setStatus(connected, deviceName, error) {
+  function setStatus(connected, deviceName, error, connectionError) {
     if (error) {
       statusEl.className = "disconnected";
       statusText.textContent = error;
@@ -21,6 +23,13 @@
     } else {
       statusEl.className = "disconnected";
       statusText.textContent = "Disconnected";
+    }
+
+    if (!error && !connected && connectionError) {
+      troubleshootingEl.hidden = false;
+      connectionErrorText.textContent = connectionError;
+    } else {
+      troubleshootingEl.hidden = true;
     }
   }
 
@@ -111,7 +120,7 @@
   window.addEventListener("message", (event) => {
     const message = event.data;
     if (message.type === "status") {
-      setStatus(message.connected, message.deviceName, message.error);
+      setStatus(message.connected, message.deviceName, message.error, message.connectionError);
     } else if (message.type === "lookupResults") {
       if (message.requestId < latestReceivedRequestId) return;
       latestReceivedRequestId = message.requestId;

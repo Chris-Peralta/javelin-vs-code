@@ -14,6 +14,7 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
 
   private view: vscode.WebviewView | undefined;
   private readonly disposables: vscode.Disposable[] = [];
+  private lastConnectionError: string | undefined;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -52,6 +53,7 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
     if (this.device) {
       this.device.on("connected", this.onConnected);
       this.device.on("disconnected", this.onDisconnected);
+      this.device.on("connectionError", this.onConnectionError);
     }
 
     this.disposables.push(this.settings.onDidChange(() => this.postSettings()));
@@ -60,6 +62,7 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
       if (this.device) {
         this.device.off("connected", this.onConnected);
         this.device.off("disconnected", this.onDisconnected);
+        this.device.off("connectionError", this.onConnectionError);
       }
       while (this.disposables.length) {
         this.disposables.pop()?.dispose();
@@ -111,10 +114,16 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
   }
 
   private onConnected = (ev: CustomEvent<NodeHidDeviceInfo>) => {
+    this.lastConnectionError = undefined;
     this.postStatus(true, ev.detail.product ?? ev.detail.manufacturer);
   };
 
   private onDisconnected = () => {
+    this.postStatus(false);
+  };
+
+  private onConnectionError = (ev: CustomEvent<{ message: string }>) => {
+    this.lastConnectionError = ev.detail.message;
     this.postStatus(false);
   };
 
@@ -134,6 +143,7 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
       type: "status",
       connected: connectedOverride ?? this.device.connected,
       deviceName,
+      connectionError: this.lastConnectionError,
     });
   }
 
@@ -161,6 +171,10 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
   <div id="status" class="disconnected">
     <span id="statusDot" class="dot"></span>
     <span id="statusText">Disconnected</span>
+  </div>
+  <div id="troubleshooting" class="troubleshooting" hidden>
+    <div>See the <a href="https://github.com/Chris-Peralta/javelin-vs-code#connection-issues" target="_blank" rel="noopener">troubleshooting docs</a> for help connecting.</div>
+    <div id="connectionErrorText" class="connectionErrorText"></div>
   </div>
   <button id="showPaperTape">Show Paper Tape</button>
   <details id="lookup" class="accordion">

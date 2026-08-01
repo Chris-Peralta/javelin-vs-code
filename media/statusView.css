@@ -36,6 +36,22 @@ body {
   color: var(--vscode-testing-iconFailed, var(--vscode-errorForeground));
 }
 
+.troubleshooting {
+  margin: -6px 0 12px;
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.troubleshooting a {
+  color: var(--vscode-textLink-foreground);
+}
+
+.connectionErrorText {
+  margin-top: 2px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  word-break: break-word;
+}
+
 #showPaperTape {
   width: 100%;
   padding: 6px 10px;

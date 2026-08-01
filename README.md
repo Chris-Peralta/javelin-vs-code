@@ -23,6 +23,11 @@ Then in VS Code:
 - Select "Extensions: Install from VSIX..."
 - Select the downloaded file
 
+### Linux
+
+Additional setup may be required if you have never used the Javelin Web Tools.
+See the troubleshooting section for details.
+
 ## Usage
 
 Click the Javelin icon in the activity bar (left side).
@@ -52,3 +57,43 @@ window — run the **Javelin: Show Paper Tape** command there to try it out. Use
 
 - [Javelin](https://github.com/jthlim/javelin-steno) - [jthlim](https://github.com/jthlim/)
 - [Javelin WebHID library](https://github.com/ServerBBQ/javelin-webtools/blob/main/lib/javelinHidDevice.ts) - [ServerBBQ](https://github.com/ServerBBQ/)
+
+# Troubleshooting
+
+## Connection issues
+
+### Linux
+
+On Linux, this extension requires the same setup as [Javelin's web tools](https://lim.au/#/software/javelin-steno-tools), so
+if you're seeing issues then open a console and run these commands:
+
+Copy this to your clipboard:
+
+```
+SUBSYSTEM=="hidraw", KERNELS=="*:4C4A:0003.*", MODE="0666"
+```
+
+Type the below command and paste the above into the file.
+
+```bash
+sudo nano /etc/udev/rules.d/99-javelin.rules
+```
+
+Reload the rules:
+
+```bash
+sudo udevadm trigger
+```
+
+These are the same commands as the javelin web tools, so if this doesn't work then
+go there and try to connect. If it doesn't work then the web tools have instructions.
+
+## Everything else
+
+Something not working? Go through the following one at a time:
+
+- Update javelin firmware on your keyboard
+- Update your computers OS
+- Update VS Code
+- In VS Code click `OUTPUT` > `Javelin`, look for errors
+- Make an issue on GitHub and share the errors

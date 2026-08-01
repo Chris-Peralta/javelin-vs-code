@@ -36,6 +36,10 @@ function matchesFilters(device: NodeHidDeviceInfo): boolean {
   );
 }
 
+function toErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 function parseData(data: string): unknown {
   try {
     return JSON.parse(data);
@@ -115,6 +119,7 @@ const JAVELIN_EVENT_NAMES: (keyof JavEventMap)[] = [
 export interface JavEventMap {
   connected: NodeHidDeviceInfo;
   disconnected: NodeHidDeviceInfo;
+  connectionError: JavConnectionErrorEventDetail;
 
   // Javelin events
   button_state: JavButtonStateEventDetail;
@@ -126,6 +131,13 @@ export interface JavEventMap {
   template_value: JavTemplateValueEventDetail;
   text: JavTextEventDetail;
   analog_data: JavAnalogDataEventDetail;
+}
+
+/**
+ * Fired when opening or communicating with the device fails (e.g. missing OS permissions).
+ */
+export interface JavConnectionErrorEventDetail {
+  message: string;
 }
 
 /**
@@ -937,6 +949,7 @@ export class JavelinHidDevice extends EventTarget {
 
       device.on("error", (err) => {
         logError("HID device error:", err);
+        this.emit("connectionError", { message: toErrorMessage(err) });
         this.handleDisconnect().catch(() => { /* already disconnecting */ });
       });
 
@@ -953,6 +966,7 @@ export class JavelinHidDevice extends EventTarget {
       await this.connectPromise;
     } catch (err) {
       logError(`Failed to open HID device at path ${path}:`, err);
+      this.emit("connectionError", { message: toErrorMessage(err) });
       throw err;
     } finally {
       this.connectPromise = null;
