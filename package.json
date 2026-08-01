@@ -2,7 +2,7 @@
   "name": "javelin-vs-code",
   "displayName": "Javelin Paper Tape",
   "description": "Live paper tape viewer for Javelin steno keyboards",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "private": true,
   "publisher": "javelin-vs-code",
   "repository": {
