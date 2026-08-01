@@ -1030,7 +1030,8 @@ export class JavelinHidDevice extends EventTarget {
     let lastErr: unknown;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
-        return await HIDAsync.open(path);
+        // Use nonExclusive mode to allow multiple windows to connect on Mac, ignored on Windows/Linux
+        return await HIDAsync.open(path, { nonExclusive: true });
       } catch (err) {
         lastErr = err;
         await new Promise((resolve) => setTimeout(resolve, retryInterval));
