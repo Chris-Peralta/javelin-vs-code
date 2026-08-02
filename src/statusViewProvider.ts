@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import type { Device as NodeHidDeviceInfo } from "node-hid";
-import { JavelinHidDevice } from "./javelinHidDevice";
+import { JavelinHidDevice, type JavConnectionErrorEventDetail } from "./javelinHidDevice";
 import { JavelinSettings } from "./settings";
 import { getNonce } from "./nonce";
 
@@ -15,6 +15,7 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined;
   private readonly disposables: vscode.Disposable[] = [];
   private lastConnectionError: string | undefined;
+  private lastUdevRule: string | undefined;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -115,6 +116,7 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
 
   private onConnected = (ev: CustomEvent<NodeHidDeviceInfo>) => {
     this.lastConnectionError = undefined;
+    this.lastUdevRule = undefined;
     this.postStatus(true, ev.detail.product ?? ev.detail.manufacturer);
   };
 
@@ -122,8 +124,9 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
     this.postStatus(false);
   };
 
-  private onConnectionError = (ev: CustomEvent<{ message: string }>) => {
+  private onConnectionError = (ev: CustomEvent<JavConnectionErrorEventDetail>) => {
     this.lastConnectionError = ev.detail.message;
+    this.lastUdevRule = ev.detail.udevRule;
     this.postStatus(false);
   };
 
@@ -144,6 +147,7 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
       connected: connectedOverride ?? this.device.connected,
       deviceName,
       connectionError: this.lastConnectionError,
+      udevRule: this.lastUdevRule,
     });
   }
 
@@ -173,8 +177,12 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
     <span id="statusText">Disconnected</span>
   </div>
   <div id="troubleshooting" class="troubleshooting" hidden>
-    <div>See the <a href="https://github.com/Chris-Peralta/javelin-vs-code#connection-issues" target="_blank" rel="noopener">troubleshooting docs</a> for help connecting.</div>
     <div id="connectionErrorText" class="connectionErrorText"></div>
+    <div id="udevRuleRow" class="udevRuleRow" hidden>
+      <code id="udevRuleText" class="udevRuleText"></code>
+      <button id="copyUdevRule" class="copyButton" title="Copy udev rule">Copy</button>
+    </div>
+    <div>See the <a href="https://github.com/Chris-Peralta/javelin-vs-code#connection-issues" target="_blank" rel="noopener">README</a> for full setup instructions.</div>
   </div>
   <button id="showPaperTape">Show Paper Tape</button>
   <details id="lookup" class="accordion">

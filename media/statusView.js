@@ -6,6 +6,9 @@
   const statusText = document.getElementById("statusText");
   const troubleshootingEl = document.getElementById("troubleshooting");
   const connectionErrorText = document.getElementById("connectionErrorText");
+  const udevRuleRow = document.getElementById("udevRuleRow");
+  const udevRuleText = document.getElementById("udevRuleText");
+  const copyUdevRule = document.getElementById("copyUdevRule");
   const showButton = document.getElementById("showPaperTape");
   const lookupInput = document.getElementById("lookupInput");
   const lookupResults = document.getElementById("lookupResults");
@@ -13,7 +16,7 @@
   const toggleBackgroundMonitoring = document.getElementById("toggleBackgroundMonitoring");
   const togglePersistPerWindow = document.getElementById("togglePersistPerWindow");
 
-  function setStatus(connected, deviceName, error, connectionError) {
+  function setStatus(connected, deviceName, error, connectionError, udevRule) {
     if (error) {
       statusEl.className = "disconnected";
       statusText.textContent = error;
@@ -28,10 +31,27 @@
     if (!error && !connected && connectionError) {
       troubleshootingEl.hidden = false;
       connectionErrorText.textContent = connectionError;
+
+      if (udevRule) {
+        udevRuleRow.hidden = false;
+        udevRuleText.textContent = udevRule;
+      } else {
+        udevRuleRow.hidden = true;
+      }
     } else {
       troubleshootingEl.hidden = true;
     }
   }
+
+  copyUdevRule.addEventListener("click", () => {
+    navigator.clipboard.writeText(udevRuleText.textContent ?? "").then(() => {
+      const original = copyUdevRule.textContent;
+      copyUdevRule.textContent = "Copied";
+      setTimeout(() => {
+        copyUdevRule.textContent = original;
+      }, 1500);
+    });
+  });
 
   showButton.addEventListener("click", () => {
     vscode.postMessage({ type: "showPaperTape" });
@@ -120,7 +140,13 @@
   window.addEventListener("message", (event) => {
     const message = event.data;
     if (message.type === "status") {
-      setStatus(message.connected, message.deviceName, message.error, message.connectionError);
+      setStatus(
+        message.connected,
+        message.deviceName,
+        message.error,
+        message.connectionError,
+        message.udevRule
+      );
     } else if (message.type === "lookupResults") {
       if (message.requestId < latestReceivedRequestId) return;
       latestReceivedRequestId = message.requestId;

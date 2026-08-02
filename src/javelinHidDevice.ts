@@ -40,6 +40,16 @@ function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** Builds the Linux udev rule for a device, e.g. `SUBSYSTEM=="hidraw", KERNELS=="*:FEED:400D.*", MODE="0666"`. */
+export function buildUdevRule(info: NodeHidDeviceInfo): string | undefined {
+  if (process.platform !== "linux") return undefined;
+  if (info.vendorId == null || info.productId == null) return undefined;
+
+  const vendorId = info.vendorId.toString(16).toUpperCase().padStart(4, "0");
+  const productId = info.productId.toString(16).toUpperCase().padStart(4, "0");
+  return `SUBSYSTEM=="hidraw", KERNELS=="*:${vendorId}:${productId}.*", MODE="0666"`;
+}
+
 function parseData(data: string): unknown {
   try {
     return JSON.parse(data);
@@ -138,6 +148,8 @@ export interface JavEventMap {
  */
 export interface JavConnectionErrorEventDetail {
   message: string;
+  /** Linux udev rule that would allow access to the device that failed to open, if applicable. */
+  udevRule?: string;
 }
 
 /**
@@ -949,7 +961,7 @@ export class JavelinHidDevice extends EventTarget {
 
       device.on("error", (err) => {
         logError("HID device error:", err);
-        this.emit("connectionError", { message: toErrorMessage(err) });
+        this.emit("connectionError", { message: toErrorMessage(err), udevRule: buildUdevRule(info) });
         this.handleDisconnect().catch(() => { /* already disconnecting */ });
       });
 
@@ -966,7 +978,7 @@ export class JavelinHidDevice extends EventTarget {
       await this.connectPromise;
     } catch (err) {
       logError(`Failed to open HID device at path ${path}:`, err);
-      this.emit("connectionError", { message: toErrorMessage(err) });
+      this.emit("connectionError", { message: toErrorMessage(err), udevRule: buildUdevRule(info) });
       throw err;
     } finally {
       this.connectPromise = null;

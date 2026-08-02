@@ -52,6 +52,39 @@ body {
   word-break: break-word;
 }
 
+.udevRuleRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.udevRuleText {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 3px 6px;
+  background: var(--vscode-textCodeBlock-background, var(--vscode-editorWidget-background));
+  border-radius: 2px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.copyButton {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
+  border: none;
+  border-radius: 2px;
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.copyButton:hover {
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
+}
+
 #showPaperTape {
   width: 100%;
   padding: 6px 10px;

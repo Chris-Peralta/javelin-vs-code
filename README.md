@@ -67,11 +67,7 @@ window — run the **Javelin: Show Paper Tape** command there to try it out. Use
 On Linux, this extension requires the same setup as [Javelin's web tools](https://lim.au/#/software/javelin-steno-tools), so
 if you're seeing issues then open a console and run these commands:
 
-Copy this to your clipboard:
-
-```
-SUBSYSTEM=="hidraw", KERNELS=="*:4C4A:0003.*", MODE="0666"
-```
+**Copy** the udev rule shown in the Javelin view in the activity bar (it appears there when a connection fails).
 
 Type the below command and paste the above into the file.
 
