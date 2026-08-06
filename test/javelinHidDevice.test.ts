@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { Device as NodeHidDeviceInfo } from "node-hid";
-import { buildUdevRule } from "../src/javelinHidDevice";
+import { buildUdevRule, decodeJavEvent, type JavSuggestionEventDetail } from "../src/javelinHidDevice";
 
 /** Runs `fn` with `process.platform` temporarily overridden, restoring it afterward. */
 function withPlatform<T>(platform: NodeJS.Platform, fn: () => T): T {
@@ -42,4 +42,38 @@ test("returns undefined when the device has no vendor/product id", () => {
     buildUdevRule({ vendorId: undefined, productId: undefined } as unknown as NodeHidDeviceInfo)
   );
   assert.equal(rule, undefined);
+});
+
+test("decodes a suggestion event whose outlines field is a bare string as a one-element array", () => {
+  const decoded = decodeJavEvent({ e: "s", c: 1, t: "good day", o: "TKPW-D" });
+  assert.equal(decoded?.event, "suggestion");
+
+  const detail = decoded?.detail as JavSuggestionEventDetail;
+  assert.equal(detail.strokes, 1);
+  assert.equal(detail.translation, "good day");
+  assert.deepEqual(detail.outlines, ["TKPW-D"]);
+});
+
+test("decodes a suggestion event whose outlines field is an array of multiple candidates", () => {
+  const decoded = decodeJavEvent({ e: "s", c: 2, t: "this is", o: ["TH-S", "STKHE", "STKH-B"] });
+
+  const detail = decoded?.detail as JavSuggestionEventDetail;
+  assert.deepEqual(detail.outlines, ["TH-S", "STKHE", "STKH-B"]);
+});
+
+test("decodes a suggestion event with a null outlines field as an empty array", () => {
+  const decoded = decodeJavEvent({ e: "s", c: 1, t: "word", o: null });
+
+  const detail = decoded?.detail as JavSuggestionEventDetail;
+  assert.deepEqual(detail.outlines, []);
+});
+
+test("decodes a suggestion event using legacy field names", () => {
+  const decoded = decodeJavEvent({ e: "suggestion", combine_count: 2, text: "good day", outlines: "TKPW-D" });
+  assert.equal(decoded?.event, "suggestion");
+
+  const detail = decoded?.detail as JavSuggestionEventDetail;
+  assert.equal(detail.strokes, 2);
+  assert.equal(detail.translation, "good day");
+  assert.deepEqual(detail.outlines, ["TKPW-D"]);
 });

@@ -23,6 +23,16 @@ test("defaults are all off", () => {
   assert.equal(settings.showTimestamps, false);
   assert.equal(settings.backgroundMonitoring, false);
   assert.equal(settings.persistPerWindow, false);
+  assert.equal(settings.suggestionsBackgroundMonitoring, false);
+});
+
+test("setSuggestionsBackgroundMonitoring(true) sets the value without affecting paper tape settings", async () => {
+  const settings = new JavelinSettings(makeContext(tmpDir()));
+  await settings.setSuggestionsBackgroundMonitoring(true);
+
+  assert.equal(settings.suggestionsBackgroundMonitoring, true);
+  assert.equal(settings.backgroundMonitoring, false);
+  assert.equal(settings.persistPerWindow, false);
 });
 
 test("setPersistPerWindow(true) is rejected while backgroundMonitoring is on", async () => {

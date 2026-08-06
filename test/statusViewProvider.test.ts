@@ -4,7 +4,7 @@ import type * as vscode from "vscode";
 import { StatusViewProvider } from "../src/statusViewProvider";
 import type { JavelinHidDevice } from "../src/javelinHidDevice";
 import type { JavelinSettings } from "../src/settings";
-import type { SuggestionTracker } from "../src/suggestionTracker";
+import type { SuggestionEntry, SuggestionTracker } from "../src/suggestionTracker";
 
 /** Stands in for JavelinHidDevice: records listeners and lets tests fire fake connection events. */
 class FakeDevice {
@@ -41,19 +41,31 @@ class FakeSettings {
 
 /** Stands in for SuggestionTracker: enough surface for StatusViewProvider to subscribe to. */
 class FakeSuggestionTracker {
-  getEntries(): unknown[] {
-    return [];
+  private readonly listeners = new Set<(entry: SuggestionEntry) => void>();
+
+  constructor(private readonly entries: SuggestionEntry[] = []) {}
+
+  getEntries(): readonly SuggestionEntry[] {
+    return this.entries;
   }
 
-  onAppend(): vscode.Disposable {
-    return { dispose() {} };
+  onAppend(listener: (entry: SuggestionEntry) => void): vscode.Disposable {
+    this.listeners.add(listener);
+    return { dispose: () => this.listeners.delete(listener) };
+  }
+
+  /** Simulates a new suggestion arriving from the device. */
+  append(entry: SuggestionEntry): void {
+    this.entries.push(entry);
+    for (const listener of this.listeners) listener(entry);
   }
 }
 
-/** Stands in for vscode.WebviewView: records every message posted to the webview. */
+/** Stands in for vscode.WebviewView: records posted messages and lets tests simulate incoming ones. */
 class FakeWebviewView {
   readonly messages: Record<string, unknown>[] = [];
   private disposeListener: (() => void) | undefined;
+  private receiveMessageListener: ((message: Record<string, unknown>) => void) | undefined;
 
   webview = {
     options: undefined as unknown,
@@ -64,12 +76,20 @@ class FakeWebviewView {
       this.messages.push(msg);
       return Promise.resolve(true);
     },
-    onDidReceiveMessage: () => ({ dispose() {} }),
+    onDidReceiveMessage: (listener: (message: Record<string, unknown>) => void) => {
+      this.receiveMessageListener = listener;
+      return { dispose() {} };
+    },
   };
 
   onDidDispose(listener: () => void): vscode.Disposable {
     this.disposeListener = listener;
     return { dispose() {} };
+  }
+
+  /** Simulates a message from the webview, e.g. `{ type: "ready" }`. */
+  receiveMessage(message: Record<string, unknown>): void {
+    this.receiveMessageListener?.(message);
   }
 
   lastStatusMessage(): Record<string, unknown> {
@@ -79,16 +99,19 @@ class FakeWebviewView {
   }
 }
 
-function makeProvider(device: FakeDevice): { provider: StatusViewProvider; webviewView: FakeWebviewView } {
+function makeProvider(
+  device: FakeDevice,
+  suggestionTracker: FakeSuggestionTracker = new FakeSuggestionTracker()
+): { provider: StatusViewProvider; webviewView: FakeWebviewView; suggestionTracker: FakeSuggestionTracker } {
   const provider = new StatusViewProvider(
     { fsPath: "/ext" } as unknown as vscode.Uri,
     device as unknown as JavelinHidDevice,
     new FakeSettings() as unknown as JavelinSettings,
-    new FakeSuggestionTracker() as unknown as SuggestionTracker
+    suggestionTracker as unknown as SuggestionTracker
   );
   const webviewView = new FakeWebviewView();
   provider.resolveWebviewView(webviewView as unknown as vscode.WebviewView);
-  return { provider, webviewView };
+  return { provider, webviewView, suggestionTracker };
 }
 
 test("a connection error is reported as disconnected with the error message", () => {
@@ -125,4 +148,28 @@ test("a plain disconnect (no prior error) does not report a connection error", (
   const status = webviewView.lastStatusMessage();
   assert.equal(status.connected, false);
   assert.equal(status.connectionError, undefined);
+});
+
+test("posts the tracker's buffered suggestions when the webview signals ready", () => {
+  const device = new FakeDevice();
+  const existing: SuggestionEntry = { id: 1, strokes: 1, translation: "good day", outlines: ["TKPW-D"], timestamp: 1 };
+  const { webviewView } = makeProvider(device, new FakeSuggestionTracker([existing]));
+
+  webviewView.receiveMessage({ type: "ready" });
+
+  const message = [...webviewView.messages].reverse().find((m) => m.type === "suggestions");
+  assert.ok(message, "expected a suggestions snapshot to have been posted");
+  assert.deepEqual(message!.entries, [existing]);
+});
+
+test("posts a new suggestion as soon as the tracker appends one", () => {
+  const device = new FakeDevice();
+  const { webviewView, suggestionTracker } = makeProvider(device);
+
+  const entry: SuggestionEntry = { id: 1, strokes: 1, translation: "good day", outlines: ["TKPW-D"], timestamp: 1 };
+  suggestionTracker.append(entry);
+
+  const message = [...webviewView.messages].reverse().find((m) => m.type === "suggestion");
+  assert.ok(message, "expected a suggestion message to have been posted");
+  assert.deepEqual(message!.entry, entry);
 });

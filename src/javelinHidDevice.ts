@@ -465,7 +465,7 @@ export function decodeBase64ToBoolArray(data: string): boolean[] {
   return bits;
 }
 
-/** The device omits the array wrapper when there's only one value, so a bare string coerces to a one-element array. */
+/** A single value arrives as a bare string, not a one-element array. */
 function coerceStringArray(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(String);
   if (typeof value === "string") return [value];
