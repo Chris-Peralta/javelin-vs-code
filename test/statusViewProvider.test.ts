@@ -4,6 +4,7 @@ import type * as vscode from "vscode";
 import { StatusViewProvider } from "../src/statusViewProvider";
 import type { JavelinHidDevice } from "../src/javelinHidDevice";
 import type { JavelinSettings } from "../src/settings";
+import type { SuggestionTracker } from "../src/suggestionTracker";
 
 /** Stands in for JavelinHidDevice: records listeners and lets tests fire fake connection events. */
 class FakeDevice {
@@ -31,8 +32,20 @@ class FakeSettings {
   showTimestamps = false;
   backgroundMonitoring = false;
   persistPerWindow = false;
+  suggestionsBackgroundMonitoring = false;
 
   onDidChange(): vscode.Disposable {
+    return { dispose() {} };
+  }
+}
+
+/** Stands in for SuggestionTracker: enough surface for StatusViewProvider to subscribe to. */
+class FakeSuggestionTracker {
+  getEntries(): unknown[] {
+    return [];
+  }
+
+  onAppend(): vscode.Disposable {
     return { dispose() {} };
   }
 }
@@ -70,7 +83,8 @@ function makeProvider(device: FakeDevice): { provider: StatusViewProvider; webvi
   const provider = new StatusViewProvider(
     { fsPath: "/ext" } as unknown as vscode.Uri,
     device as unknown as JavelinHidDevice,
-    new FakeSettings() as unknown as JavelinSettings
+    new FakeSettings() as unknown as JavelinSettings,
+    new FakeSuggestionTracker() as unknown as SuggestionTracker
   );
   const webviewView = new FakeWebviewView();
   provider.resolveWebviewView(webviewView as unknown as vscode.WebviewView);

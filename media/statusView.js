@@ -15,6 +15,10 @@
   const toggleTimestamps = document.getElementById("toggleTimestamps");
   const toggleBackgroundMonitoring = document.getElementById("toggleBackgroundMonitoring");
   const togglePersistPerWindow = document.getElementById("togglePersistPerWindow");
+  const toggleSuggestionsBackgroundMonitoring = document.getElementById(
+    "toggleSuggestionsBackgroundMonitoring"
+  );
+  const suggestionsList = document.getElementById("suggestionsList");
 
   function setStatus(connected, deviceName, error, connectionError, udevRule) {
     if (error) {
@@ -57,12 +61,19 @@
     vscode.postMessage({ type: "showPaperTape" });
   });
 
-  function setSettings(showTimestamps, backgroundMonitoring, persistPerWindow) {
+  function setSettings(
+    showTimestamps,
+    backgroundMonitoring,
+    persistPerWindow,
+    suggestionsBackgroundMonitoring
+  ) {
     toggleTimestamps.checked = !!showTimestamps;
     toggleBackgroundMonitoring.checked = !!backgroundMonitoring;
     togglePersistPerWindow.checked = !!persistPerWindow;
     toggleBackgroundMonitoring.disabled = !!persistPerWindow;
     togglePersistPerWindow.disabled = !!backgroundMonitoring;
+
+    toggleSuggestionsBackgroundMonitoring.checked = !!suggestionsBackgroundMonitoring;
   }
 
   toggleTimestamps.addEventListener("change", () => {
@@ -80,6 +91,13 @@
     vscode.postMessage({
       type: "setPersistPerWindow",
       value: togglePersistPerWindow.checked,
+    });
+  });
+
+  toggleSuggestionsBackgroundMonitoring.addEventListener("change", () => {
+    vscode.postMessage({
+      type: "setSuggestionsBackgroundMonitoring",
+      value: toggleSuggestionsBackgroundMonitoring.checked,
     });
   });
 
@@ -120,6 +138,38 @@
       .join("");
   }
 
+  const MAX_DISPLAYED_SUGGESTIONS = 50;
+
+  function suggestionHtml(entry) {
+    return `
+      <div class="suggestionEntry">
+        <span class="suggestionOutlines">${escapeHtml(entry.outlines.join(", "))}</span>
+        <span class="suggestionTranslation">${escapeHtml(entry.translation)}</span>
+      </div>`;
+  }
+
+  function renderSuggestions(entries) {
+    if (entries.length === 0) {
+      suggestionsList.innerHTML = `<div class="lookupMessage">No suggestions yet.</div>`;
+      return;
+    }
+    suggestionsList.innerHTML = entries
+      .slice(-MAX_DISPLAYED_SUGGESTIONS)
+      .reverse()
+      .map(suggestionHtml)
+      .join("");
+  }
+
+  function appendSuggestion(entry) {
+    if (suggestionsList.querySelector(".lookupMessage")) {
+      suggestionsList.innerHTML = "";
+    }
+    suggestionsList.insertAdjacentHTML("afterbegin", suggestionHtml(entry));
+    while (suggestionsList.children.length > MAX_DISPLAYED_SUGGESTIONS) {
+      suggestionsList.lastElementChild?.remove();
+    }
+  }
+
   lookupInput.addEventListener("input", () => {
     clearTimeout(debounceTimer);
     const text = lookupInput.value;
@@ -152,7 +202,16 @@
       latestReceivedRequestId = message.requestId;
       renderLookupResults(message.results ?? [], message.error);
     } else if (message.type === "settings") {
-      setSettings(message.showTimestamps, message.backgroundMonitoring, message.persistPerWindow);
+      setSettings(
+        message.showTimestamps,
+        message.backgroundMonitoring,
+        message.persistPerWindow,
+        message.suggestionsBackgroundMonitoring
+      );
+    } else if (message.type === "suggestions") {
+      renderSuggestions(message.entries ?? []);
+    } else if (message.type === "suggestion") {
+      appendSuggestion(message.entry);
     }
   });
 

@@ -6,9 +6,11 @@ import { PaperTapePanel } from "./paperTapePanel";
 import { PaperTapeRecorder } from "./paperTapeRecorder";
 import { JavelinSettings } from "./settings";
 import { StatusViewProvider } from "./statusViewProvider";
+import { SuggestionTracker } from "./suggestionTracker";
 
 let device: JavelinHidDevice | undefined;
 let recorder: PaperTapeRecorder | undefined;
+let suggestionTracker: SuggestionTracker | undefined;
 let settings: JavelinSettings | undefined;
 let focusTracker: AppFocusTracker | undefined;
 
@@ -33,7 +35,19 @@ export function activate(context: vscode.ExtensionContext) {
     context.workspaceState
   );
 
-  const statusViewProvider = new StatusViewProvider(context.extensionUri, device, currentSettings);
+  const currentSuggestionTracker = new SuggestionTracker(
+    device,
+    currentSettings,
+    () => currentFocusTracker.isFocused()
+  );
+  suggestionTracker = currentSuggestionTracker;
+
+  const statusViewProvider = new StatusViewProvider(
+    context.extensionUri,
+    device,
+    currentSettings,
+    currentSuggestionTracker
+  );
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(StatusViewProvider.viewType, statusViewProvider)
   );
@@ -48,6 +62,7 @@ export function activate(context: vscode.ExtensionContext) {
 export async function deactivate(): Promise<void> {
   PaperTapePanel.disposeCurrent();
   await recorder?.dispose();
+  suggestionTracker?.dispose();
   settings?.dispose();
   focusTracker?.dispose();
   await device?.destroy();

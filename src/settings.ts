@@ -9,12 +9,14 @@ export interface JavelinSettingsSnapshot {
   showTimestamps: boolean;
   backgroundMonitoring: boolean;
   persistPerWindow: boolean;
+  suggestionsBackgroundMonitoring: boolean;
 }
 
 const DEFAULT_SNAPSHOT: JavelinSettingsSnapshot = {
   showTimestamps: false,
   backgroundMonitoring: false,
   persistPerWindow: false,
+  suggestionsBackgroundMonitoring: false,
 };
 
 /**
@@ -87,6 +89,14 @@ export class JavelinSettings implements vscode.Disposable {
     });
   }
 
+  get suggestionsBackgroundMonitoring(): boolean {
+    return this.cache.suggestionsBackgroundMonitoring;
+  }
+
+  async setSuggestionsBackgroundMonitoring(value: boolean): Promise<void> {
+    await this.enqueueWrite((current) => ({ ...current, suggestionsBackgroundMonitoring: value }));
+  }
+
   snapshot(): JavelinSettingsSnapshot {
     return { ...this.cache };
   }
@@ -131,6 +141,7 @@ export class JavelinSettings implements vscode.Disposable {
       showTimestamps: !!parsed.showTimestamps,
       backgroundMonitoring: !!parsed.backgroundMonitoring,
       persistPerWindow: !!parsed.persistPerWindow,
+      suggestionsBackgroundMonitoring: !!parsed.suggestionsBackgroundMonitoring,
     };
   }
 
@@ -154,7 +165,8 @@ export class JavelinSettings implements vscode.Disposable {
     if (
       onDisk.showTimestamps === this.cache.showTimestamps &&
       onDisk.backgroundMonitoring === this.cache.backgroundMonitoring &&
-      onDisk.persistPerWindow === this.cache.persistPerWindow
+      onDisk.persistPerWindow === this.cache.persistPerWindow &&
+      onDisk.suggestionsBackgroundMonitoring === this.cache.suggestionsBackgroundMonitoring
     ) {
       return;
     }

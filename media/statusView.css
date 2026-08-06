@@ -188,6 +188,35 @@ body {
   padding: 3px 6px;
 }
 
+#suggestionsList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.suggestionEntry {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 6px;
+  background: var(--vscode-editorWidget-background, var(--vscode-list-hoverBackground));
+  border-radius: 2px;
+}
+
+.suggestionOutlines {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-weight: 600;
+}
+
+.suggestionTranslation {
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .accordionBody .settingRow + .settingRow {
   margin-top: 8px;
 }

@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import type { Device as NodeHidDeviceInfo } from "node-hid";
 import { JavelinHidDevice, type JavConnectionErrorEventDetail } from "./javelinHidDevice";
 import { JavelinSettings } from "./settings";
+import { SuggestionTracker, type SuggestionEntry } from "./suggestionTracker";
 import { getNonce } from "./nonce";
 
 /**
@@ -20,7 +21,8 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly device: JavelinHidDevice | undefined,
-    private readonly settings: JavelinSettings
+    private readonly settings: JavelinSettings,
+    private readonly suggestionTracker: SuggestionTracker
   ) {}
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -37,6 +39,7 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
         if (message.type === "ready") {
           this.postStatus();
           this.postSettings();
+          this.postSuggestions();
         } else if (message.type === "showPaperTape") {
           void vscode.commands.executeCommand("javelin.showPaperTape");
         } else if (message.type === "lookup") {
@@ -47,6 +50,8 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
           void this.settings.setBackgroundMonitoring(!!message.value);
         } else if (message.type === "setPersistPerWindow") {
           void this.settings.setPersistPerWindow(!!message.value);
+        } else if (message.type === "setSuggestionsBackgroundMonitoring") {
+          void this.settings.setSuggestionsBackgroundMonitoring(!!message.value);
         }
       }
     );
@@ -58,6 +63,7 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
     }
 
     this.disposables.push(this.settings.onDidChange(() => this.postSettings()));
+    this.disposables.push(this.suggestionTracker.onAppend((entry) => this.postSuggestion(entry)));
 
     webviewView.onDidDispose(() => {
       if (this.device) {
@@ -81,7 +87,21 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
       showTimestamps: this.settings.showTimestamps,
       backgroundMonitoring: this.settings.backgroundMonitoring,
       persistPerWindow: this.settings.persistPerWindow,
+      suggestionsBackgroundMonitoring: this.settings.suggestionsBackgroundMonitoring,
     });
+  }
+
+  private postSuggestions() {
+    if (!this.view) return;
+    void this.view.webview.postMessage({
+      type: "suggestions",
+      entries: this.suggestionTracker.getEntries(),
+    });
+  }
+
+  private postSuggestion(entry: SuggestionEntry) {
+    if (!this.view) return;
+    void this.view.webview.postMessage({ type: "suggestion", entry });
   }
 
   private async handleLookup(text: string, requestId: number) {
@@ -192,6 +212,12 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
       <div id="lookupResults"></div>
     </div>
   </details>
+  <details id="suggestions" class="accordion">
+    <summary>Suggestions</summary>
+    <div class="accordionBody">
+      <div id="suggestionsList"></div>
+    </div>
+  </details>
   <details id="settings" class="accordion">
     <summary>Settings</summary>
     <div class="accordionBody">
@@ -206,6 +232,10 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
       <label class="settingRow">
         <input type="checkbox" id="togglePersistPerWindow" />
         Save a separate paper tape per window (requires background recording off)
+      </label>
+      <label class="settingRow">
+        <input type="checkbox" id="toggleSuggestionsBackgroundMonitoring" />
+        Show suggestions while VS Code is in the background
       </label>
     </div>
   </details>

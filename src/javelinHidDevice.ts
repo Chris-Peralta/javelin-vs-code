@@ -465,6 +465,13 @@ export function decodeBase64ToBoolArray(data: string): boolean[] {
   return bits;
 }
 
+/** The device omits the array wrapper when there's only one value, so a bare string coerces to a one-element array. */
+function coerceStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === "string") return [value];
+  return [];
+}
+
 export type DecodedJavEvent<K extends keyof JavEventMap> = {
   event: K;
   detail: JavEventMap[K] & { raw: string };
@@ -515,7 +522,7 @@ export function decodeJavEvent<K extends keyof JavEventMap>(
       case "string":
         return String(value);
       case "string[]":
-        return Array.isArray(value) ? value.map(String) : [];
+        return coerceStringArray(value);
       default:
         return value;
     }
