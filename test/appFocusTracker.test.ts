@@ -15,6 +15,14 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Polls instead of a fixed delay, so slow CI runners don't make a passing assertion flaky. */
+async function waitFor(predicate: () => boolean, timeoutMs = 1000, intervalMs = 5): Promise<void> {
+  const start = Date.now();
+  while (!predicate() && Date.now() - start < timeoutMs) {
+    await delay(intervalMs);
+  }
+}
+
 function makeContext(lockDir: string): vscode.ExtensionContext {
   return { globalStorageUri: { fsPath: lockDir } } as unknown as vscode.ExtensionContext;
 }
@@ -157,7 +165,8 @@ test("serializes writeSharedState calls so slower I/O for an earlier write can't
   try {
     vscodeMock.window.__setFocused(false); // queued write #1 (focused: false), slowed down
     vscodeMock.window.__setFocused(true); // queued write #2 (focused: true)
-    await delay(60);
+    await waitFor(() => calls >= 2); // both writes dispatched
+    await delay(200); // safety margin past the 30ms artificial delay, generous for a loaded CI runner
 
     assert.equal(
       readFocusEntry(lockDir, "this-window")?.focused,
