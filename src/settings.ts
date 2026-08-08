@@ -1,15 +1,22 @@
 import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
-import { logError } from "./logger";
+import { logError, LogLevel, LOG_LEVELS } from "./logger";
 
 const SETTINGS_FILE_NAME = "settings.json";
+
+export type { LogLevel };
+
+export function isLogLevel(value: unknown): value is LogLevel {
+  return typeof value === "string" && (LOG_LEVELS as readonly string[]).includes(value);
+}
 
 export interface JavelinSettingsSnapshot {
   showTimestamps: boolean;
   backgroundMonitoring: boolean;
   persistPerWindow: boolean;
   suggestionsBackgroundMonitoring: boolean;
+  logLevel: LogLevel;
 }
 
 const DEFAULT_SNAPSHOT: JavelinSettingsSnapshot = {
@@ -17,6 +24,7 @@ const DEFAULT_SNAPSHOT: JavelinSettingsSnapshot = {
   backgroundMonitoring: false,
   persistPerWindow: false,
   suggestionsBackgroundMonitoring: false,
+  logLevel: "WARN",
 };
 
 /**
@@ -97,6 +105,14 @@ export class JavelinSettings implements vscode.Disposable {
     await this.enqueueWrite((current) => ({ ...current, suggestionsBackgroundMonitoring: value }));
   }
 
+  get logLevel(): LogLevel {
+    return this.cache.logLevel;
+  }
+
+  async setLogLevel(value: LogLevel): Promise<void> {
+    await this.enqueueWrite((current) => ({ ...current, logLevel: value }));
+  }
+
   snapshot(): JavelinSettingsSnapshot {
     return { ...this.cache };
   }
@@ -142,6 +158,7 @@ export class JavelinSettings implements vscode.Disposable {
       backgroundMonitoring: !!parsed.backgroundMonitoring,
       persistPerWindow: !!parsed.persistPerWindow,
       suggestionsBackgroundMonitoring: !!parsed.suggestionsBackgroundMonitoring,
+      logLevel: isLogLevel(parsed.logLevel) ? parsed.logLevel : DEFAULT_SNAPSHOT.logLevel,
     };
   }
 
@@ -166,7 +183,8 @@ export class JavelinSettings implements vscode.Disposable {
       onDisk.showTimestamps === this.cache.showTimestamps &&
       onDisk.backgroundMonitoring === this.cache.backgroundMonitoring &&
       onDisk.persistPerWindow === this.cache.persistPerWindow &&
-      onDisk.suggestionsBackgroundMonitoring === this.cache.suggestionsBackgroundMonitoring
+      onDisk.suggestionsBackgroundMonitoring === this.cache.suggestionsBackgroundMonitoring &&
+      onDisk.logLevel === this.cache.logLevel
     ) {
       return;
     }

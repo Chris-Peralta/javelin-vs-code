@@ -18,6 +18,7 @@
   const toggleSuggestionsBackgroundMonitoring = document.getElementById(
     "toggleSuggestionsBackgroundMonitoring"
   );
+  const logLevelSelect = document.getElementById("logLevel");
   const suggestionsList = document.getElementById("suggestionsList");
 
   function setStatus(connected, deviceName, error, connectionError, udevRule) {
@@ -65,7 +66,8 @@
     showTimestamps,
     backgroundMonitoring,
     persistPerWindow,
-    suggestionsBackgroundMonitoring
+    suggestionsBackgroundMonitoring,
+    logLevel
   ) {
     toggleTimestamps.checked = !!showTimestamps;
     toggleBackgroundMonitoring.checked = !!backgroundMonitoring;
@@ -74,6 +76,8 @@
     togglePersistPerWindow.disabled = !!backgroundMonitoring;
 
     toggleSuggestionsBackgroundMonitoring.checked = !!suggestionsBackgroundMonitoring;
+
+    if (logLevel) logLevelSelect.value = logLevel;
   }
 
   toggleTimestamps.addEventListener("change", () => {
@@ -99,6 +103,10 @@
       type: "setSuggestionsBackgroundMonitoring",
       value: toggleSuggestionsBackgroundMonitoring.checked,
     });
+  });
+
+  logLevelSelect.addEventListener("change", () => {
+    vscode.postMessage({ type: "setLogLevel", logLevel: logLevelSelect.value });
   });
 
   let requestId = 0;
@@ -206,7 +214,8 @@
         message.showTimestamps,
         message.backgroundMonitoring,
         message.persistPerWindow,
-        message.suggestionsBackgroundMonitoring
+        message.suggestionsBackgroundMonitoring,
+        message.logLevel
       );
     } else if (message.type === "suggestions") {
       renderSuggestions(message.entries ?? []);

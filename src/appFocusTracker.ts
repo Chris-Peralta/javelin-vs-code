@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
-import { logError, logInfo } from "./logger";
+import { logDebug, logError, logWarn } from "./logger";
 
 /** Best-effort signal for whether *this* window has OS focus - cross-window coordination only corrects a `vscode.window.state.focused` stuck true after a missed blur event. */
 /** Each window writes only its own file, so concurrent writers never race; see applySharedState() for how the holder is derived. */
@@ -46,7 +46,7 @@ export class AppFocusTracker implements vscode.Disposable {
     );
 
     this.init().catch((err) => {
-      logError("AppFocusTracker: setup failed, falling back to this window's own focus state", err);
+      logWarn("AppFocusTracker: setup failed, falling back to this window's own focus state", err);
     });
   }
 
@@ -89,7 +89,7 @@ export class AppFocusTracker implements vscode.Disposable {
   }
 
   private onLocalStateChange(focused: boolean): void {
-    logInfo(`AppFocusTracker: local window focus changed to ${focused}`);
+    logDebug(`AppFocusTracker: local window focus changed to ${focused}`);
     // Trust our own local observation immediately; the write below reconciles it against siblings shortly after.
     this.focused = focused;
     void this.writeSharedState(focused);
@@ -148,7 +148,7 @@ export class AppFocusTracker implements vscode.Disposable {
 
     const focused = holder === this.windowId;
     if (focused !== this.focused) {
-      logInfo(`AppFocusTracker: derived focus changed ${this.focused} -> ${focused} (holder ${holder ?? "none"})`);
+      logDebug(`AppFocusTracker: derived focus changed ${this.focused} -> ${focused} (holder ${holder ?? "none"})`);
     }
     this.focused = focused;
   }

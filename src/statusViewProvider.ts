@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import type { Device as NodeHidDeviceInfo } from "node-hid";
 import { JavelinHidDevice, type JavConnectionErrorEventDetail } from "./javelinHidDevice";
-import { JavelinSettings } from "./settings";
+import { isLogLevel, JavelinSettings } from "./settings";
 import { SuggestionTracker, type SuggestionEntry } from "./suggestionTracker";
 import { getNonce } from "./nonce";
 
@@ -35,7 +35,7 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
     webviewView.webview.html = this.getHtml(webviewView.webview);
 
     webviewView.webview.onDidReceiveMessage(
-      (message: { type: string; text?: string; requestId?: number; value?: boolean }) => {
+      (message: { type: string; text?: string; requestId?: number; value?: boolean; logLevel?: string }) => {
         if (message.type === "ready") {
           this.postStatus();
           this.postSettings();
@@ -52,6 +52,10 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
           void this.settings.setPersistPerWindow(!!message.value);
         } else if (message.type === "setSuggestionsBackgroundMonitoring") {
           void this.settings.setSuggestionsBackgroundMonitoring(!!message.value);
+        } else if (message.type === "setLogLevel") {
+          if (isLogLevel(message.logLevel)) {
+            void this.settings.setLogLevel(message.logLevel);
+          }
         }
       }
     );
@@ -88,6 +92,7 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
       backgroundMonitoring: this.settings.backgroundMonitoring,
       persistPerWindow: this.settings.persistPerWindow,
       suggestionsBackgroundMonitoring: this.settings.suggestionsBackgroundMonitoring,
+      logLevel: this.settings.logLevel,
     });
   }
 
@@ -236,6 +241,15 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
       <label class="settingRow">
         <input type="checkbox" id="toggleSuggestionsBackgroundMonitoring" />
         Show suggestions while VS Code is in the background
+      </label>
+      <label class="settingRow">
+        Logging level
+        <select id="logLevel">
+          <option value="DEBUG">Debug</option>
+          <option value="INFO">Info</option>
+          <option value="WARN">Warn</option>
+          <option value="ERROR">Error</option>
+        </select>
       </label>
     </div>
   </details>

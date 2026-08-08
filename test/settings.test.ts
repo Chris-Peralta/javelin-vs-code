@@ -18,12 +18,27 @@ function makeContext(storageDir: string): vscode.ExtensionContext {
   return { globalStorageUri: { fsPath: storageDir } } as unknown as vscode.ExtensionContext;
 }
 
-test("defaults are all off", () => {
+test("defaults are all off, with logLevel defaulting to WARN", () => {
   const settings = new JavelinSettings(makeContext(tmpDir()));
   assert.equal(settings.showTimestamps, false);
   assert.equal(settings.backgroundMonitoring, false);
   assert.equal(settings.persistPerWindow, false);
   assert.equal(settings.suggestionsBackgroundMonitoring, false);
+  assert.equal(settings.logLevel, "WARN");
+});
+
+test("setLogLevel(value) sets the value and persists it", async () => {
+  const settings = new JavelinSettings(makeContext(tmpDir()));
+  await settings.setLogLevel("DEBUG");
+  assert.equal(settings.logLevel, "DEBUG");
+});
+
+test("an invalid logLevel already on disk falls back to the default instead of throwing", () => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify({ logLevel: "VERBOSE" }));
+
+  const settings = new JavelinSettings(makeContext(dir));
+  assert.equal(settings.logLevel, "WARN");
 });
 
 test("setSuggestionsBackgroundMonitoring(true) sets the value without affecting paper tape settings", async () => {

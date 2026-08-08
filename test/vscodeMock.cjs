@@ -38,6 +38,7 @@ class EventEmitter {
 // windows (they'd incorrectly share focus state). Prefer injecting a fake
 // `getFocused` function instead, same as extension.ts does for AppFocusTracker.
 const windowStateEmitter = new EventEmitter();
+let lastOutputChannelLines = [];
 const window = {
   state: { focused: true },
   onDidChangeWindowState: windowStateEmitter.event,
@@ -46,7 +47,17 @@ const window = {
     windowStateEmitter.fire({ focused });
   },
   createOutputChannel() {
-    return { appendLine() {} };
+    const lines = [];
+    lastOutputChannelLines = lines;
+    return {
+      appendLine(line) {
+        lines.push(line);
+      },
+    };
+  },
+  // Test-only escape hatch for asserting on what the "Javelin" output channel received.
+  __getOutputChannelLines() {
+    return lastOutputChannelLines;
   },
 };
 

@@ -3,7 +3,7 @@
 
 import yaml from "js-yaml";
 import { HIDAsync, devices, devicesAsync, type Device as NodeHidDeviceInfo } from "node-hid";
-import { logError, logInfo } from "./logger";
+import { logDebug, logError, logInfo, logWarn } from "./logger";
 
 /**
  * Whether HID access is available in this environment.
@@ -700,7 +700,7 @@ export class JavelinHidDevice extends EventTarget {
     const target = path ? matches.find((d) => d.path === path) : matches[0];
 
     if (!target) {
-      logError("No matching HID device found.");
+      logWarn("No matching HID device found.");
       return null;
     }
 
@@ -753,6 +753,7 @@ export class JavelinHidDevice extends EventTarget {
           return;
         }
         const device = this.device;
+        logDebug("Sending Javelin command:", command);
 
         let responseBuffer = "";
         let collecting = false; // Start collecting only after we see our connectionId
@@ -788,6 +789,7 @@ export class JavelinHidDevice extends EventTarget {
             // trim responceBuffer
             responseBuffer = responseBuffer.split("\n\n")[0];
             responseBuffer = responseBuffer.replace(/^\x00+/, ''); // Strip null characters
+            logDebug(`Raw Javelin response to "${command}":`, responseBuffer);
             resolve(responseBuffer);
             clearTimeout(timer);
           }
@@ -796,7 +798,7 @@ export class JavelinHidDevice extends EventTarget {
         device.on("data", handler);
 
         const disconnectHandler = () =>{
-          logError("Device disconnected while running command");
+          logWarn("Device disconnected while running command");
           device.off("data", handler);
           this.off("disconnected", disconnectHandler);
           reject(new Error("Device disconnected"));
@@ -914,7 +916,7 @@ export class JavelinHidDevice extends EventTarget {
     if (this.connected) return;
 
     const matches = await this.findMatchingDevices();
-    logInfo(`checkForConnections: found ${matches.length} matching device(s)`);
+    logDebug(`checkForConnections: found ${matches.length} matching device(s)`);
     if (matches.length === 1) {
       await this.openDevice(matches[0]);
     }
@@ -1046,6 +1048,7 @@ export class JavelinHidDevice extends EventTarget {
         const line = rawLine.replace(/^\x00+/, ''); // This caused so much debugging
         if (line.startsWith("EV ")) {
           const dataPart = line.slice(3).trim();
+          logDebug("Raw Javelin event:", dataPart);
           try {
             const ev = parseData(dataPart) as { e: string; [key: string]: unknown };
 
@@ -1053,11 +1056,11 @@ export class JavelinHidDevice extends EventTarget {
             if (decoded) {
               this.emit(decoded.event, decoded.detail);
             } else {
-              logError("Failed to parse event data:", ev);
+              logWarn("Failed to parse event data:", ev);
             }
 
           } catch (err) {
-            logError("Failed to parse event data:", dataPart, err);
+            logWarn("Failed to parse event data:", dataPart, err);
           }
         }
       }

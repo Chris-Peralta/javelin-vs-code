@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { JavelinHidDevice, type JavPaperTapeEventDetail } from "./javelinHidDevice";
-import { logInfo } from "./logger";
+import { logDebug, logInfo } from "./logger";
 import { JavelinSettings } from "./settings";
 
 export interface PaperTapeEntry {
@@ -119,7 +119,7 @@ export class PaperTapeRecorder {
 
     // Unless background monitoring is enabled, only record strokes while VS Code is focused.
     if (!this.settings.backgroundMonitoring && !this.getFocused()) {
-      logInfo(`Dropped paper_tape event (window not focused): outline="${detail.outline ?? ""}"`);
+      logDebug(`Dropped paper_tape event (window not focused): outline="${detail.outline ?? ""}"`);
       return;
     }
 

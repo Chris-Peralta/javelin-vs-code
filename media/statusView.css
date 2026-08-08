@@ -228,3 +228,13 @@ body {
   font-size: 0.9em;
   cursor: pointer;
 }
+
+.settingRow select {
+  margin-left: auto;
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+  border: 1px solid var(--vscode-dropdown-border, transparent);
+  border-radius: 2px;
+  font-family: inherit;
+  font-size: inherit;
+}

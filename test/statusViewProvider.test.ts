@@ -33,9 +33,16 @@ class FakeSettings {
   backgroundMonitoring = false;
   persistPerWindow = false;
   suggestionsBackgroundMonitoring = false;
+  logLevel = "WARN";
+  setLogLevelCalls: string[] = [];
 
   onDidChange(): vscode.Disposable {
     return { dispose() {} };
+  }
+
+  async setLogLevel(value: string): Promise<void> {
+    this.setLogLevelCalls.push(value);
+    this.logLevel = value;
   }
 }
 
@@ -101,17 +108,23 @@ class FakeWebviewView {
 
 function makeProvider(
   device: FakeDevice,
-  suggestionTracker: FakeSuggestionTracker = new FakeSuggestionTracker()
-): { provider: StatusViewProvider; webviewView: FakeWebviewView; suggestionTracker: FakeSuggestionTracker } {
+  suggestionTracker: FakeSuggestionTracker = new FakeSuggestionTracker(),
+  settings: FakeSettings = new FakeSettings()
+): {
+  provider: StatusViewProvider;
+  webviewView: FakeWebviewView;
+  suggestionTracker: FakeSuggestionTracker;
+  settings: FakeSettings;
+} {
   const provider = new StatusViewProvider(
     { fsPath: "/ext" } as unknown as vscode.Uri,
     device as unknown as JavelinHidDevice,
-    new FakeSettings() as unknown as JavelinSettings,
+    settings as unknown as JavelinSettings,
     suggestionTracker as unknown as SuggestionTracker
   );
   const webviewView = new FakeWebviewView();
   provider.resolveWebviewView(webviewView as unknown as vscode.WebviewView);
-  return { provider, webviewView, suggestionTracker };
+  return { provider, webviewView, suggestionTracker, settings };
 }
 
 test("a connection error is reported as disconnected with the error message", () => {
@@ -172,4 +185,35 @@ test("posts a new suggestion as soon as the tracker appends one", () => {
   const message = [...webviewView.messages].reverse().find((m) => m.type === "suggestion");
   assert.ok(message, "expected a suggestion message to have been posted");
   assert.deepEqual(message!.entry, entry);
+});
+
+test("includes the current logLevel when posting settings", () => {
+  const device = new FakeDevice();
+  const settings = new FakeSettings();
+  settings.logLevel = "DEBUG";
+  const { webviewView } = makeProvider(device, undefined, settings);
+
+  webviewView.receiveMessage({ type: "ready" });
+
+  const message = [...webviewView.messages].reverse().find((m) => m.type === "settings");
+  assert.ok(message, "expected a settings snapshot to have been posted");
+  assert.equal(message!.logLevel, "DEBUG");
+});
+
+test("a setLogLevel message with a valid level updates the setting", () => {
+  const device = new FakeDevice();
+  const { webviewView, settings } = makeProvider(device);
+
+  webviewView.receiveMessage({ type: "setLogLevel", logLevel: "ERROR" });
+
+  assert.deepEqual(settings.setLogLevelCalls, ["ERROR"]);
+});
+
+test("a setLogLevel message with an invalid level is ignored", () => {
+  const device = new FakeDevice();
+  const { webviewView, settings } = makeProvider(device);
+
+  webviewView.receiveMessage({ type: "setLogLevel", logLevel: "VERBOSE" });
+
+  assert.deepEqual(settings.setLogLevelCalls, []);
 });

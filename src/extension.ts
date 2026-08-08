@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { AppFocusTracker } from "./appFocusTracker";
 import { isHidSupported, JavelinHidDevice } from "./javelinHidDevice";
-import { logInfo } from "./logger";
+import { logInfo, setLogLevel } from "./logger";
 import { PaperTapePanel } from "./paperTapePanel";
 import { PaperTapeRecorder } from "./paperTapeRecorder";
 import { JavelinSettings } from "./settings";
@@ -15,15 +15,17 @@ let settings: JavelinSettings | undefined;
 let focusTracker: AppFocusTracker | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
+  const currentSettings = new JavelinSettings(context);
+  settings = currentSettings;
+  setLogLevel(currentSettings.logLevel);
+  context.subscriptions.push(currentSettings.onDidChange((snapshot) => setLogLevel(snapshot.logLevel)));
+
   const folders = vscode.workspace.workspaceFolders?.map((f) => f.uri.fsPath) ?? [];
   logInfo(`Javelin extension activating, workspaceFolders: ${folders.length ? folders.join(", ") : "(none)"}`);
 
   if (isHidSupported()) {
     device = new JavelinHidDevice();
   }
-
-  const currentSettings = new JavelinSettings(context);
-  settings = currentSettings;
 
   const currentFocusTracker = new AppFocusTracker(context);
   focusTracker = currentFocusTracker;

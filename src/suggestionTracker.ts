@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { JavelinHidDevice, type JavSuggestionEventDetail } from "./javelinHidDevice";
-import { logInfo } from "./logger";
+import { logDebug, logInfo } from "./logger";
 import { JavelinSettings } from "./settings";
 
 export interface SuggestionEntry {
@@ -54,7 +54,7 @@ export class SuggestionTracker {
 
     // Unless background monitoring is enabled, only record suggestions while VS Code is focused.
     if (!this.settings.suggestionsBackgroundMonitoring && !this.getFocused()) {
-      logInfo(`Dropped suggestion event (window not focused): translation="${detail.translation ?? ""}"`);
+      logDebug(`Dropped suggestion event (window not focused): translation="${detail.translation ?? ""}"`);
       return;
     }
 
