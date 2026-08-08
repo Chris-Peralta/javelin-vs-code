@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { Device as NodeHidDeviceInfo } from "node-hid";
-import { buildUdevRule, decodeJavEvent, type JavSuggestionEventDetail } from "../src/javelinHidDevice";
+import { buildUdevRule, decodeJavEvent, parseLookupResults, type JavSuggestionEventDetail } from "../src/javelinHidDevice";
 
 /** Runs `fn` with `process.platform` temporarily overridden, restoring it afterward. */
 function withPlatform<T>(platform: NodeJS.Platform, fn: () => T): T {
@@ -76,4 +76,53 @@ test("decodes a suggestion event using legacy field names", () => {
   assert.equal(detail.strokes, 2);
   assert.equal(detail.translation, "good day");
   assert.deepEqual(detail.outlines, ["TKPW-D"]);
+});
+
+test("parseLookupResults parses the legacy firmware format", () => {
+  const raw = [
+    { outline: "KAT", dictionary: "main.json", definition: "cat", can_remove: true },
+    { outline: "KAEUT", definition: "cat" },
+  ];
+
+  assert.deepEqual(parseLookupResults(raw, "kat"), [
+    { outline: "KAT", dictionary: "main.json", translation: "cat", removable: true },
+    { outline: "KAEUT", dictionary: null, translation: "cat", removable: false },
+  ]);
+});
+
+test("parseLookupResults parses the modern firmware format's array response, resolving run-length-encoded dictionary/translation references", () => {
+  const raw = [
+    { o: "KAT", d: "main.json", t: "cat", r: 1 as const },
+    { o: "KAEUT", d: 0 },
+  ];
+
+  assert.deepEqual(parseLookupResults(raw, "kat"), [
+    { outline: "KAT", dictionary: "main.json", translation: "cat", removable: true },
+    { outline: "KAEUT", dictionary: "main.json", translation: "kat", removable: false },
+  ]);
+});
+
+test("parseLookupResults resolves a run-length-encoded translation back-reference", () => {
+  const raw = [
+    { o: "KAT", d: "main.json", t: "cat", r: 1 as const },
+    { o: "KAEUT", d: 0, t: 0 },
+  ];
+
+  assert.deepEqual(parseLookupResults(raw, "kat"), [
+    { outline: "KAT", dictionary: "main.json", translation: "cat", removable: true },
+    { outline: "KAEUT", dictionary: "main.json", translation: "cat", removable: false },
+  ]);
+});
+
+test("parseLookupResults wraps a single modern-format result object (newest firmware) in an array", () => {
+  const raw = { o: "KAT", d: "main.json", t: "cat", r: 1 as const };
+
+  assert.deepEqual(parseLookupResults(raw, "kat"), [
+    { outline: "KAT", dictionary: "main.json", translation: "cat", removable: true },
+  ]);
+});
+
+test("parseLookupResults returns an empty array for an empty or null response", () => {
+  assert.deepEqual(parseLookupResults([], "kat"), []);
+  assert.deepEqual(parseLookupResults(null, "kat"), []);
 });

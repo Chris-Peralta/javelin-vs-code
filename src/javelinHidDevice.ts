@@ -162,6 +162,84 @@ export interface LookupResult {
   removable: boolean;
 }
 
+type RawLookupResult =
+  | { outline: string; dictionary?: string; definition: string; can_remove?: boolean }
+  | { o: string; d: string | number; t?: string | number; r?: 1 };
+
+/** Parses the (already JSON/YAML-decoded) body of a `lookup` command response into `LookupResult`s, handling both the legacy and modern firmware formats. */
+export function parseLookupResults(rawResults: RawLookupResult[] | RawLookupResult | null | undefined, text: string): LookupResult[] {
+  if (!rawResults) {
+    return [];
+  }
+  if (Array.isArray(rawResults) && rawResults.length === 0) {
+    return [];
+  }
+
+  const isLegacyLookup = Array.isArray(rawResults) && 'outline' in rawResults[0];
+  if (isLegacyLookup) {
+    return (rawResults as Extract<RawLookupResult, { outline: string }>[]).map((item) => ({
+      outline: item.outline,
+      dictionary: item.dictionary || null,
+      translation: item.definition,
+      removable: item.can_remove || false,
+    }));
+  }
+
+  const modernResults = (Array.isArray(rawResults) ? rawResults : [rawResults]) as Extract<RawLookupResult, { o: string }>[];
+
+  const resolvedDictionaries: (string | null)[] = new Array(modernResults.length).fill(null);
+  const resolvedTranslations: string[] = new Array(modernResults.length).fill(text);
+
+  // Map for dictionaries to be used in dictionary lookup
+  const dictionaries: string[] = []
+
+  /** This function must be called in order from first item to last, then once looped over once it can be called in any order */
+  const getDictionary = (item: { d: string | number; r?: 1 }): string | null => {
+    if (typeof item.d === 'string') {
+      dictionaries.push(item.d);
+      return item.d;
+    }
+
+    if (typeof item.d === 'number') {
+      return dictionaries[item.d];
+    }
+    return null;
+  };
+
+  // Map for translations to be used in translation lookup
+  const translations: string[] = [];
+
+  /** This function must be called in order from first item to last, then once looped over once it can be called in any order */
+  const getTranslation = (item: { t?: string | number }): string => {
+    if (typeof item.t === 'string') {
+      translations.push(item.t);
+      return item.t;
+    }
+
+    if (typeof item.t === 'number') {
+      return translations[item.t];
+    }
+
+    return text;
+  };
+
+
+  // First pass: resolve all dictionary values
+  modernResults.forEach((result, index) => {
+    resolvedDictionaries[index] = getDictionary(result);
+    resolvedTranslations[index] = getTranslation(result);
+  });
+
+  return modernResults.map((item, index) => {
+    return {
+      outline: item.o,
+      dictionary: resolvedDictionaries[index],
+      translation: resolvedTranslations[index],
+      removable: item.r === 1,
+    };
+  });
+}
+
 type CoercibleType = "number" | "boolean" | "boolean[]" | "string" | "string[]" | "unknown";
 
 interface AliasMapping<T> {
@@ -771,75 +849,8 @@ export class JavelinHidDevice extends EventTarget {
    */
   async lookup(text: string): Promise<LookupResult[]> {
     const response = await this.sendCommand(`lookup ${text}`);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rawResults = parseData(response) as any[];
-
-    if (!rawResults || rawResults.length === 0) {
-      return [];
-    }
-
-    // Check for legacy firmware format
-    if ('outline' in rawResults[0]) {
-      return rawResults.map((item: { outline: string; dictionary?: string; definition: string; can_remove?: boolean }) => ({
-        outline: item.outline,
-        dictionary: item.dictionary || null,
-        translation: item.definition,
-        removable: item.can_remove || false,
-      }));
-    }
-
-    // Modern firmware format
-    const resolvedDictionaries: (string | null)[] = new Array(rawResults.length).fill(null);
-    const resolvedTranslations: string[] = new Array(rawResults.length).fill(text);
-
-    // Map for dictionaries to be used in dictionary lookup
-    const dictionaries: string[] = []
-
-    /** This function must be called in order from first item to last, then once looped over once it can be called in any order */
-    const getDictionary = (item: { d: string | number; r?: 1 }): string | null => {
-      if (typeof item.d === 'string') {
-        dictionaries.push(item.d);
-        return item.d;
-      }
-
-      if (typeof item.d === 'number') {
-        return dictionaries[item.d];
-      }
-      return null;
-    };
-
-    // Map for translations to be used in translation lookup
-    const translations: string[] = [];
-
-    /** This function must be called in order from first item to last, then once looped over once it can be called in any order */
-    const getTranslation = (item: { t?: string }): string => {
-      if (typeof item.t === 'string') {
-        translations.push(item.t);
-        return item.t;
-      }
-
-      if (typeof item.t === 'number') {
-        return translations[item.t];
-      }
-
-      return text;
-    };
-
-
-    // First pass: resolve all dictionary values
-    rawResults.forEach((result: { d: string | number; t?: string; r?: 1 }, index: number) => {
-      resolvedDictionaries[index] = getDictionary(result);
-      resolvedTranslations[index] = getTranslation(result);
-    });
-
-    return rawResults.map((item: { o: string; d: string | number; t?: string; r?: 1 }, index: number) => {
-      return {
-        outline: item.o,
-        dictionary: resolvedDictionaries[index],
-        translation: resolvedTranslations[index],
-        removable: item.r === 1,
-      };
-    });
+    const rawResults = parseData(response) as RawLookupResult[] | RawLookupResult;
+    return parseLookupResults(rawResults, text);
   }
 
   async getConnectionId(){
