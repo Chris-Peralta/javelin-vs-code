@@ -73,6 +73,11 @@ body {
   font-size: var(--vscode-editor-font-size, 13px);
 }
 
+#tape:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
 .row {
   display: flex;
   padding: 2px 8px;
@@ -84,6 +89,11 @@ body {
 
 .row.hidden {
   display: none;
+}
+
+.row.selected {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
 }
 
 .col-timestamp,

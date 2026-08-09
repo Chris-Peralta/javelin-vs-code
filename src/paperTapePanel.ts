@@ -9,8 +9,8 @@ import { getNonce } from "./nonce";
  * whether this panel is open; this class just displays the buffered history and
  * live-streams new entries while it's open.
  *
- * Filtering (hiding rows, and pausing new rows while the filter box is focused) is
- * handled entirely client-side in media/main.js - this class just streams every entry.
+ * Filtering (hiding rows, and pausing new rows while any part of the panel is focused)
+ * is handled entirely client-side in media/main.js - this class just streams every entry.
  */
 export class PaperTapePanel {
   private static current: PaperTapePanel | undefined;
@@ -27,6 +27,7 @@ export class PaperTapePanel {
 
     if (PaperTapePanel.current) {
       PaperTapePanel.current.panel.reveal(column);
+      PaperTapePanel.current.focusLastRow();
       return;
     }
 
@@ -75,6 +76,10 @@ export class PaperTapePanel {
   private onAppend = (entry: PaperTapeEntry) => {
     void this.panel.webview.postMessage({ type: "append", entry });
   };
+
+  private focusLastRow(): void {
+    void this.panel.webview.postMessage({ type: "focusLast" });
+  }
 
   private postSettings() {
     void this.panel.webview.postMessage({
@@ -132,14 +137,14 @@ export class PaperTapePanel {
     <button id="clear" title="Clear paper tape">Clear</button>
   </div>
   <div id="pausedBanner" class="hidden">
-    Filter box is focused — new strokes are not being written to the tape.
+    This panel has focus — new strokes are not being written to the tape.
   </div>
   <div id="tapeHeader">
     <span class="col-timestamp">Time</span>
     <span class="col-outline">Outline</span>
     <span class="col-translation">Translation</span>
   </div>
-  <div id="tape"></div>
+  <div id="tape" tabindex="0" role="listbox" aria-label="Paper tape entries"></div>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
