@@ -1,6 +1,9 @@
 import * as vscode from "vscode";
+import * as fs from "fs";
 import type { Device as NodeHidDeviceInfo } from "node-hid";
 import { JavelinHidDevice, type JavConnectionErrorEventDetail } from "./javelinHidDevice";
+import { formatPaperTapeExport } from "./paperTapeExport";
+import type { PaperTapeRecorder } from "./paperTapeRecorder";
 import { isLogLevel, JavelinSettings } from "./settings";
 import { SuggestionTracker, type SuggestionEntry } from "./suggestionTracker";
 import { getNonce } from "./nonce";
@@ -22,7 +25,8 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
     private readonly extensionUri: vscode.Uri,
     private readonly device: JavelinHidDevice | undefined,
     private readonly settings: JavelinSettings,
-    private readonly suggestionTracker: SuggestionTracker
+    private readonly suggestionTracker: SuggestionTracker,
+    private readonly recorder: PaperTapeRecorder | undefined
   ) {}
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -50,12 +54,18 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
           void this.settings.setBackgroundMonitoring(!!message.value);
         } else if (message.type === "setPersistPerWindow") {
           void this.settings.setPersistPerWindow(!!message.value);
+        } else if (message.type === "setOnlyRecordWhileEditingFile") {
+          void this.settings.setOnlyRecordWhileEditingFile(!!message.value);
         } else if (message.type === "setSuggestionsBackgroundMonitoring") {
           void this.settings.setSuggestionsBackgroundMonitoring(!!message.value);
         } else if (message.type === "setLogLevel") {
           if (isLogLevel(message.logLevel)) {
             void this.settings.setLogLevel(message.logLevel);
           }
+        } else if (message.type === "clearPaperTape") {
+          this.recorder?.clear();
+        } else if (message.type === "exportPaperTape") {
+          void this.exportPaperTape();
         }
       }
     );
@@ -91,9 +101,20 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
       showTimestamps: this.settings.showTimestamps,
       backgroundMonitoring: this.settings.backgroundMonitoring,
       persistPerWindow: this.settings.persistPerWindow,
+      onlyRecordWhileEditingFile: this.settings.onlyRecordWhileEditingFile,
       suggestionsBackgroundMonitoring: this.settings.suggestionsBackgroundMonitoring,
       logLevel: this.settings.logLevel,
     });
+  }
+
+  private async exportPaperTape(): Promise<void> {
+    const uri = await vscode.window.showSaveDialog({
+      defaultUri: vscode.Uri.file("paper-tape.json"),
+      filters: { "JSON files": ["json"] },
+    });
+    if (!uri) return;
+
+    await fs.promises.writeFile(uri.fsPath, formatPaperTapeExport(this.recorder?.getEntries() ?? []));
   }
 
   private postSuggestions() {
@@ -223,9 +244,10 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
       <div id="suggestionsList"></div>
     </div>
   </details>
-  <details id="settings" class="accordion">
-    <summary>Settings</summary>
+  <details id="paperTapeSettings" class="accordion">
+    <summary>Paper Tape Settings</summary>
     <div class="accordionBody">
+      <button id="exportPaperTape" class="accordionButton">Export Paper Tape</button>
       <label class="settingRow">
         <input type="checkbox" id="toggleTimestamps" />
         Show timestamps in paper tape
@@ -238,6 +260,16 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
         <input type="checkbox" id="togglePersistPerWindow" />
         Save a separate paper tape per window (requires background recording off)
       </label>
+      <label class="settingRow">
+        <input type="checkbox" id="toggleOnlyRecordWhileEditingFile" />
+        Only record strokes while editing a file
+      </label>
+      <button id="clearPaperTape" class="accordionButton">Clear Paper Tape</button>
+    </div>
+  </details>
+  <details id="settings" class="accordion">
+    <summary>Settings</summary>
+    <div class="accordionBody">
       <label class="settingRow">
         <input type="checkbox" id="toggleSuggestionsBackgroundMonitoring" />
         Show suggestions while VS Code is in the background

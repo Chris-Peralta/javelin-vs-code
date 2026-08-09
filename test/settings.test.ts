@@ -23,8 +23,15 @@ test("defaults are all off, with logLevel defaulting to WARN", () => {
   assert.equal(settings.showTimestamps, false);
   assert.equal(settings.backgroundMonitoring, false);
   assert.equal(settings.persistPerWindow, false);
+  assert.equal(settings.onlyRecordWhileEditingFile, false);
   assert.equal(settings.suggestionsBackgroundMonitoring, false);
   assert.equal(settings.logLevel, "WARN");
+});
+
+test("setOnlyRecordWhileEditingFile(true) sets the value and persists it", async () => {
+  const settings = new JavelinSettings(makeContext(tmpDir()));
+  await settings.setOnlyRecordWhileEditingFile(true);
+  assert.equal(settings.onlyRecordWhileEditingFile, true);
 });
 
 test("setLogLevel(value) sets the value and persists it", async () => {

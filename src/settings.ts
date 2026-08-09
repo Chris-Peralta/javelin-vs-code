@@ -15,6 +15,7 @@ export interface JavelinSettingsSnapshot {
   showTimestamps: boolean;
   backgroundMonitoring: boolean;
   persistPerWindow: boolean;
+  onlyRecordWhileEditingFile: boolean;
   suggestionsBackgroundMonitoring: boolean;
   logLevel: LogLevel;
 }
@@ -23,6 +24,7 @@ const DEFAULT_SNAPSHOT: JavelinSettingsSnapshot = {
   showTimestamps: false,
   backgroundMonitoring: false,
   persistPerWindow: false,
+  onlyRecordWhileEditingFile: false,
   suggestionsBackgroundMonitoring: false,
   logLevel: "WARN",
 };
@@ -97,6 +99,15 @@ export class JavelinSettings implements vscode.Disposable {
     });
   }
 
+  /** When enabled, strokes are only recorded to the paper tape while a file is the active editor. */
+  get onlyRecordWhileEditingFile(): boolean {
+    return this.cache.onlyRecordWhileEditingFile;
+  }
+
+  async setOnlyRecordWhileEditingFile(value: boolean): Promise<void> {
+    await this.enqueueWrite((current) => ({ ...current, onlyRecordWhileEditingFile: value }));
+  }
+
   get suggestionsBackgroundMonitoring(): boolean {
     return this.cache.suggestionsBackgroundMonitoring;
   }
@@ -157,6 +168,7 @@ export class JavelinSettings implements vscode.Disposable {
       showTimestamps: !!parsed.showTimestamps,
       backgroundMonitoring: !!parsed.backgroundMonitoring,
       persistPerWindow: !!parsed.persistPerWindow,
+      onlyRecordWhileEditingFile: !!parsed.onlyRecordWhileEditingFile,
       suggestionsBackgroundMonitoring: !!parsed.suggestionsBackgroundMonitoring,
       logLevel: isLogLevel(parsed.logLevel) ? parsed.logLevel : DEFAULT_SNAPSHOT.logLevel,
     };
@@ -183,6 +195,7 @@ export class JavelinSettings implements vscode.Disposable {
       onDisk.showTimestamps === this.cache.showTimestamps &&
       onDisk.backgroundMonitoring === this.cache.backgroundMonitoring &&
       onDisk.persistPerWindow === this.cache.persistPerWindow &&
+      onDisk.onlyRecordWhileEditingFile === this.cache.onlyRecordWhileEditingFile &&
       onDisk.suggestionsBackgroundMonitoring === this.cache.suggestionsBackgroundMonitoring &&
       onDisk.logLevel === this.cache.logLevel
     ) {

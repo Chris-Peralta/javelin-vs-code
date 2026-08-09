@@ -221,6 +221,25 @@ body {
   margin-top: 8px;
 }
 
+#paperTapeSettings .accordionBody > * + * {
+  margin-top: 8px;
+}
+
+.accordionButton {
+  width: 100%;
+  padding: 4px 10px;
+  background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
+  border: none;
+  border-radius: 2px;
+  font-size: 0.9em;
+  cursor: pointer;
+}
+
+.accordionButton:hover {
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
+}
+
 .settingRow {
   display: flex;
   align-items: center;

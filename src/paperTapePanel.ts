@@ -95,8 +95,6 @@ export class PaperTapePanel {
         entries: this.recorder?.getEntries() ?? [],
         showTimestamps: this.settings.showTimestamps,
       });
-    } else if (message.type === "clear") {
-      this.recorder?.clear();
     }
   }
 
@@ -134,7 +132,6 @@ export class PaperTapePanel {
 <body>
   <div id="toolbar">
     <input id="filter" type="text" placeholder="Filter paper tape (outline, translation)…" autocomplete="off" />
-    <button id="clear" title="Clear paper tape">Clear</button>
   </div>
   <div id="pausedBanner" class="hidden">
     This panel has focus — new strokes are not being written to the tape.

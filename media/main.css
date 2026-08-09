@@ -32,19 +32,6 @@ body {
   outline-offset: -1px;
 }
 
-#clear {
-  padding: 4px 10px;
-  background: var(--vscode-button-secondaryBackground);
-  color: var(--vscode-button-secondaryForeground);
-  border: none;
-  border-radius: 2px;
-  cursor: pointer;
-}
-
-#clear:hover {
-  background: var(--vscode-button-secondaryHoverBackground);
-}
-
 #pausedBanner {
   padding: 4px 8px;
   background: var(--vscode-inputValidation-warningBackground);

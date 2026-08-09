@@ -75,6 +75,53 @@ test("records even while unfocused when backgroundMonitoring is on", () => {
   assert.equal(recorder.getEntries().length, 1);
 });
 
+test("does not record when onlyRecordWhileEditingFile is on and no file is being edited", () => {
+  const device = new FakeDevice();
+  const settings = makeSettings({ onlyRecordWhileEditingFile: true });
+  const recorder = new PaperTapeRecorder(
+    device as unknown as JavelinHidDevice,
+    settings,
+    () => true,
+    undefined,
+    () => false
+  );
+
+  device.strike();
+
+  assert.equal(recorder.getEntries().length, 0);
+});
+
+test("records when onlyRecordWhileEditingFile is on and a file is being edited", () => {
+  const device = new FakeDevice();
+  const settings = makeSettings({ onlyRecordWhileEditingFile: true });
+  const recorder = new PaperTapeRecorder(
+    device as unknown as JavelinHidDevice,
+    settings,
+    () => true,
+    undefined,
+    () => true
+  );
+
+  device.strike();
+
+  assert.equal(recorder.getEntries().length, 1);
+});
+
+test("records regardless of the active editor when onlyRecordWhileEditingFile is off", () => {
+  const device = new FakeDevice();
+  const recorder = new PaperTapeRecorder(
+    device as unknown as JavelinHidDevice,
+    makeSettings(),
+    () => true,
+    undefined,
+    () => false
+  );
+
+  device.strike();
+
+  assert.equal(recorder.getEntries().length, 1);
+});
+
 test("does not persist to workspaceState when persistPerWindow is off", async () => {
   const device = new FakeDevice();
   const workspaceState = new FakeMemento();

@@ -58,7 +58,9 @@ export class PaperTapeRecorder {
     private readonly device: JavelinHidDevice | undefined,
     private readonly settings: JavelinSettings,
     private readonly getFocused: () => boolean = () => vscode.window.state.focused,
-    private readonly workspaceState?: vscode.Memento
+    private readonly workspaceState?: vscode.Memento,
+    private readonly getEditingFile: () => boolean = () =>
+      !!vscode.window.activeTextEditor && vscode.window.activeTextEditor.document.uri.scheme === "file"
   ) {
     logInfo(
       `PaperTapeRecorder initializing: persistPerWindow=${this.settings.persistPerWindow}, ` +
@@ -120,6 +122,11 @@ export class PaperTapeRecorder {
     // Unless background monitoring is enabled, only record strokes while VS Code is focused.
     if (!this.settings.backgroundMonitoring && !this.getFocused()) {
       logDebug(`Dropped paper_tape event (window not focused): outline="${detail.outline ?? ""}"`);
+      return;
+    }
+
+    if (this.settings.onlyRecordWhileEditingFile && !this.getEditingFile()) {
+      logDebug(`Dropped paper_tape event (not editing a file): outline="${detail.outline ?? ""}"`);
       return;
     }
 

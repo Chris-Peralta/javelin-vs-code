@@ -4,7 +4,6 @@
 
   /** @type {HTMLInputElement} */
   const filterInput = document.getElementById("filter");
-  const clearButton = document.getElementById("clear");
   const pausedBanner = document.getElementById("pausedBanner");
   const tape = document.getElementById("tape");
 
@@ -147,7 +146,7 @@
   }
 
   // focusin/focusout bubble, so this catches focus landing on any element in the
-  // panel (filter, tape, clear button), not just the filter input.
+  // panel (filter, tape), not just the filter input.
   document.addEventListener("focusin", updatePanelFocused);
   document.addEventListener("focusout", () => {
     // The next focused element (if any) hasn't received focus yet when focusout fires.
@@ -166,12 +165,6 @@
       event.preventDefault();
       focusLastRow();
     }
-  });
-
-  clearButton.addEventListener("click", () => {
-    tape.innerHTML = "";
-    selectedRow = null;
-    vscode.postMessage({ type: "clear" });
   });
 
   tape.addEventListener("click", (event) => {

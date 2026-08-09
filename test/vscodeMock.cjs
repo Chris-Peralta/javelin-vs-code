@@ -59,11 +59,16 @@ const window = {
   __getOutputChannelLines() {
     return lastOutputChannelLines;
   },
+  // Tests override this directly (e.g. `vscode.window.showSaveDialog = async () => uri`) to simulate a user picking a path.
+  showSaveDialog: async () => undefined,
 };
 
 const Uri = {
   joinPath(base, ...segments) {
     return { fsPath: [base.fsPath ?? base, ...segments].join("/") };
+  },
+  file(fsPath) {
+    return { fsPath };
   },
 };
 

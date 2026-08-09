@@ -15,11 +15,14 @@
   const toggleTimestamps = document.getElementById("toggleTimestamps");
   const toggleBackgroundMonitoring = document.getElementById("toggleBackgroundMonitoring");
   const togglePersistPerWindow = document.getElementById("togglePersistPerWindow");
+  const toggleOnlyRecordWhileEditingFile = document.getElementById("toggleOnlyRecordWhileEditingFile");
   const toggleSuggestionsBackgroundMonitoring = document.getElementById(
     "toggleSuggestionsBackgroundMonitoring"
   );
   const logLevelSelect = document.getElementById("logLevel");
   const suggestionsList = document.getElementById("suggestionsList");
+  const exportPaperTapeButton = document.getElementById("exportPaperTape");
+  const clearPaperTapeButton = document.getElementById("clearPaperTape");
 
   function setStatus(connected, deviceName, error, connectionError, udevRule) {
     if (error) {
@@ -66,6 +69,7 @@
     showTimestamps,
     backgroundMonitoring,
     persistPerWindow,
+    onlyRecordWhileEditingFile,
     suggestionsBackgroundMonitoring,
     logLevel
   ) {
@@ -74,6 +78,7 @@
     togglePersistPerWindow.checked = !!persistPerWindow;
     toggleBackgroundMonitoring.disabled = !!persistPerWindow;
     togglePersistPerWindow.disabled = !!backgroundMonitoring;
+    toggleOnlyRecordWhileEditingFile.checked = !!onlyRecordWhileEditingFile;
 
     toggleSuggestionsBackgroundMonitoring.checked = !!suggestionsBackgroundMonitoring;
 
@@ -96,6 +101,21 @@
       type: "setPersistPerWindow",
       value: togglePersistPerWindow.checked,
     });
+  });
+
+  toggleOnlyRecordWhileEditingFile.addEventListener("change", () => {
+    vscode.postMessage({
+      type: "setOnlyRecordWhileEditingFile",
+      value: toggleOnlyRecordWhileEditingFile.checked,
+    });
+  });
+
+  exportPaperTapeButton.addEventListener("click", () => {
+    vscode.postMessage({ type: "exportPaperTape" });
+  });
+
+  clearPaperTapeButton.addEventListener("click", () => {
+    vscode.postMessage({ type: "clearPaperTape" });
   });
 
   toggleSuggestionsBackgroundMonitoring.addEventListener("change", () => {
@@ -214,6 +234,7 @@
         message.showTimestamps,
         message.backgroundMonitoring,
         message.persistPerWindow,
+        message.onlyRecordWhileEditingFile,
         message.suggestionsBackgroundMonitoring,
         message.logLevel
       );

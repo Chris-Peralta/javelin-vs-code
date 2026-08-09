@@ -10,7 +10,6 @@ const mainJsSource = fs.readFileSync(path.join(__dirname, "..", "media", "main.j
 const PANEL_HTML = `
   <div id="toolbar">
     <input id="filter" type="text" />
-    <button id="clear">Clear</button>
   </div>
   <div id="pausedBanner" class="hidden"></div>
   <div id="tapeHeader"></div>

@@ -1,8 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type * as vscode from "vscode";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
+import * as vscode from "vscode";
 import { StatusViewProvider } from "../src/statusViewProvider";
 import type { JavelinHidDevice } from "../src/javelinHidDevice";
+import type { PaperTapeRecorder } from "../src/paperTapeRecorder";
 import type { JavelinSettings } from "../src/settings";
 import type { SuggestionEntry, SuggestionTracker } from "../src/suggestionTracker";
 
@@ -32,9 +36,11 @@ class FakeSettings {
   showTimestamps = false;
   backgroundMonitoring = false;
   persistPerWindow = false;
+  onlyRecordWhileEditingFile = false;
   suggestionsBackgroundMonitoring = false;
   logLevel = "WARN";
   setLogLevelCalls: string[] = [];
+  setOnlyRecordWhileEditingFileCalls: boolean[] = [];
 
   onDidChange(): vscode.Disposable {
     return { dispose() {} };
@@ -43,6 +49,26 @@ class FakeSettings {
   async setLogLevel(value: string): Promise<void> {
     this.setLogLevelCalls.push(value);
     this.logLevel = value;
+  }
+
+  async setOnlyRecordWhileEditingFile(value: boolean): Promise<void> {
+    this.setOnlyRecordWhileEditingFileCalls.push(value);
+    this.onlyRecordWhileEditingFile = value;
+  }
+}
+
+/** Stands in for PaperTapeRecorder: enough surface for StatusViewProvider's clear/export handlers. */
+class FakeRecorder {
+  clearCalls = 0;
+
+  constructor(private readonly entries: unknown[] = []) {}
+
+  getEntries(): readonly unknown[] {
+    return this.entries;
+  }
+
+  clear(): void {
+    this.clearCalls++;
   }
 }
 
@@ -109,22 +135,25 @@ class FakeWebviewView {
 function makeProvider(
   device: FakeDevice,
   suggestionTracker: FakeSuggestionTracker = new FakeSuggestionTracker(),
-  settings: FakeSettings = new FakeSettings()
+  settings: FakeSettings = new FakeSettings(),
+  recorder: FakeRecorder = new FakeRecorder()
 ): {
   provider: StatusViewProvider;
   webviewView: FakeWebviewView;
   suggestionTracker: FakeSuggestionTracker;
   settings: FakeSettings;
+  recorder: FakeRecorder;
 } {
   const provider = new StatusViewProvider(
     { fsPath: "/ext" } as unknown as vscode.Uri,
     device as unknown as JavelinHidDevice,
     settings as unknown as JavelinSettings,
-    suggestionTracker as unknown as SuggestionTracker
+    suggestionTracker as unknown as SuggestionTracker,
+    recorder as unknown as PaperTapeRecorder
   );
   const webviewView = new FakeWebviewView();
   provider.resolveWebviewView(webviewView as unknown as vscode.WebviewView);
-  return { provider, webviewView, suggestionTracker, settings };
+  return { provider, webviewView, suggestionTracker, settings, recorder };
 }
 
 test("a connection error is reported as disconnected with the error message", () => {
@@ -216,4 +245,67 @@ test("a setLogLevel message with an invalid level is ignored", () => {
   webviewView.receiveMessage({ type: "setLogLevel", logLevel: "VERBOSE" });
 
   assert.deepEqual(settings.setLogLevelCalls, []);
+});
+
+test("includes the current onlyRecordWhileEditingFile value when posting settings", () => {
+  const device = new FakeDevice();
+  const settings = new FakeSettings();
+  settings.onlyRecordWhileEditingFile = true;
+  const { webviewView } = makeProvider(device, undefined, settings);
+
+  webviewView.receiveMessage({ type: "ready" });
+
+  const message = [...webviewView.messages].reverse().find((m) => m.type === "settings");
+  assert.ok(message, "expected a settings snapshot to have been posted");
+  assert.equal(message!.onlyRecordWhileEditingFile, true);
+});
+
+test("a setOnlyRecordWhileEditingFile message updates the setting", () => {
+  const device = new FakeDevice();
+  const { webviewView, settings } = makeProvider(device);
+
+  webviewView.receiveMessage({ type: "setOnlyRecordWhileEditingFile", value: true });
+
+  assert.deepEqual(settings.setOnlyRecordWhileEditingFileCalls, [true]);
+});
+
+test("a clearPaperTape message clears the recorder", () => {
+  const device = new FakeDevice();
+  const { webviewView, recorder } = makeProvider(device);
+
+  webviewView.receiveMessage({ type: "clearPaperTape" });
+
+  assert.equal(recorder.clearCalls, 1);
+});
+
+test("an exportPaperTape message does nothing if the user cancels the save dialog", async () => {
+  (vscode.window as { showSaveDialog: () => Promise<undefined> }).showSaveDialog = async () => undefined;
+
+  const device = new FakeDevice();
+  const { webviewView } = makeProvider(device);
+
+  webviewView.receiveMessage({ type: "exportPaperTape" });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  // No assertion needed beyond "doesn't throw" - there's no file system write to check without a chosen path.
+});
+
+test("an exportPaperTape message writes the recorder's entries to the chosen path", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "javelin-export-"));
+  const target = path.join(dir, "paper-tape.txt");
+  (vscode.window as { showSaveDialog: () => Promise<{ fsPath: string }> }).showSaveDialog = async () => ({
+    fsPath: target,
+  });
+
+  const device = new FakeDevice();
+  const recorder = new FakeRecorder([
+    { outline: "TH", dictionary: "main.json", translation: "this", undo: 0, timestamp: 1 },
+  ]);
+  const { webviewView } = makeProvider(device, undefined, undefined, recorder);
+
+  webviewView.receiveMessage({ type: "exportPaperTape" });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const written = fs.readFileSync(target, "utf8");
+  assert.ok(written.includes("this"), "exported file should contain the recorded translation");
 });

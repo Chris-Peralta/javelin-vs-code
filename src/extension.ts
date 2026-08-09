@@ -48,7 +48,8 @@ export function activate(context: vscode.ExtensionContext) {
     context.extensionUri,
     device,
     currentSettings,
-    currentSuggestionTracker
+    currentSuggestionTracker,
+    recorder
   );
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(StatusViewProvider.viewType, statusViewProvider)
