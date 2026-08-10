@@ -25,6 +25,68 @@
         "command": "javelin.showPaperTape",
         "title": "Javelin: Show Paper Tape",
         "category": "Javelin"
+      },
+      {
+        "command": "javelin.paperTape.jumpToWord",
+        "title": "Javelin: Jump to Word",
+        "category": "Javelin"
+      },
+      {
+        "command": "javelin.paperTape.peekWord",
+        "title": "Javelin: Peek Word",
+        "category": "Javelin"
+      },
+      {
+        "command": "javelin.paperTape.editWord",
+        "title": "Javelin: Edit Word",
+        "category": "Javelin"
+      },
+      {
+        "command": "javelin.paperTape.deleteWord",
+        "title": "Javelin: Delete Word",
+        "category": "Javelin"
+      },
+      {
+        "command": "javelin.paperTape.insertBefore",
+        "title": "Javelin: Insert Word Before",
+        "category": "Javelin"
+      },
+      {
+        "command": "javelin.paperTape.insertAfter",
+        "title": "Javelin: Insert Word After",
+        "category": "Javelin"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "javelin.paperTape.jumpToWord",
+        "key": "enter",
+        "when": "javelinPaperTapeFocused"
+      },
+      {
+        "command": "javelin.paperTape.peekWord",
+        "key": "shift+enter",
+        "when": "javelinPaperTapeFocused"
+      },
+      {
+        "command": "javelin.paperTape.editWord",
+        "key": "f2",
+        "when": "javelinPaperTapeFocused"
+      },
+      {
+        "command": "javelin.paperTape.deleteWord",
+        "key": "delete",
+        "when": "javelinPaperTapeFocused"
+      },
+      {
+        "command": "javelin.paperTape.insertBefore",
+        "key": "ctrl+enter",
+        "when": "javelinPaperTapeFocused"
+      },
+      {
+        "command": "javelin.paperTape.insertAfter",
+        "key": "ctrl+shift+enter",
+        "when": "javelinPaperTapeFocused"
       }
     ],
     "viewsContainers": {

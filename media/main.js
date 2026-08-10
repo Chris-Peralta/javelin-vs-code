@@ -10,6 +10,8 @@
   let panelFocused = false;
   let selectedRow = null;
   let rowCounter = 0;
+  /** @type {{ finish: (value: string | null) => void } | null} */
+  let activeInlineEditor = null;
 
   function formatTimestamp(ms) {
     return new Date(ms).toLocaleTimeString([], { hour12: false });
@@ -24,14 +26,30 @@
   }
 
   function rowMatchesFilter(row, filterValue) {
-    return row.dataset.search.includes(filterValue);
+    // The ephemeral .row-inserting row has no dataset.search, so it's never subject to filtering.
+    return (row.dataset.search ?? "").includes(filterValue);
+  }
+
+  /** Keys reserved for the paper tape's VS Code commands - must stay local when typed into a text field within the webview. */
+  function isReservedTapeKey(event) {
+    const key = event.key.toLowerCase();
+    return key === "enter" || key === "f2" || key === "delete";
   }
 
   function renderRow(entry) {
     const row = document.createElement("div");
     row.className = "row";
+    if (entry.kind && entry.kind !== "text") {
+      row.classList.add(`kind-${entry.kind}`);
+    }
+    if (entry.synthetic) {
+      row.classList.add("synthetic");
+    }
     row.id = `tape-row-${rowCounter++}`;
     row.dataset.search = searchTextFor(entry);
+    if (entry.wordId) {
+      row.dataset.wordId = entry.wordId;
+    }
     row.setAttribute("role", "option");
     row.setAttribute("aria-selected", "false");
 
@@ -51,6 +69,12 @@
       undoBadge.className = "undo-badge";
       undoBadge.textContent = `*${entry.undo}`;
       translation.appendChild(undoBadge);
+    }
+    if (entry.synthetic) {
+      const insertedBadge = document.createElement("span");
+      insertedBadge.className = "inserted-badge";
+      insertedBadge.textContent = "+";
+      translation.appendChild(insertedBadge);
     }
 
     row.appendChild(timestamp);
@@ -84,6 +108,7 @@
     } else {
       tape.removeAttribute("aria-activedescendant");
     }
+    vscode.postMessage({ type: "selectionChanged", wordId: selectedRow?.dataset.wordId ?? null });
   }
 
   function moveSelection(delta) {
@@ -117,6 +142,106 @@
   function pageSize() {
     const rowHeight = selectedRow ? selectedRow.offsetHeight : 18;
     return Math.max(1, Math.floor(tape.clientHeight / rowHeight));
+  }
+
+  function applyWordStatus(update) {
+    const rows = tape.querySelectorAll(`.row[data-word-id="${CSS.escape(update.wordId)}"]`);
+    for (const row of rows) {
+      row.classList.remove("status-edited", "status-deleted");
+      row.title = "";
+      if (update.state === "edited") {
+        row.classList.add("status-edited");
+        row.title = `Edited: "${update.originalText ?? ""}" → "${update.currentText}"`;
+      } else if (update.state === "deleted") {
+        row.classList.add("status-deleted");
+      }
+    }
+  }
+
+  /** Shared plumbing for the inline edit/insert text inputs: wires Enter/Escape/blur and guarantees `cleanup` runs exactly once. */
+  function beginInlineInput({ createInput, placeholder, initialValue, cleanup, onSubmit }) {
+    closeInlineEditor();
+
+    const input = createInput();
+    input.type = "text";
+    input.className = "inline-edit";
+    if (placeholder) input.placeholder = placeholder;
+    if (initialValue !== undefined) input.value = initialValue;
+
+    let settled = false;
+    function finish(value) {
+      if (settled) return;
+      settled = true;
+      activeInlineEditor = null;
+      cleanup();
+      if (value !== null) onSubmit(value);
+    }
+
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        finish(input.value.trim() || null);
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        finish(null);
+      }
+      // Every key stays local to this input, never reaching the tape's nav handler or VS Code's keybinding dispatch.
+      event.stopPropagation();
+    });
+    input.addEventListener("blur", () => finish(null));
+
+    activeInlineEditor = { finish };
+    input.focus();
+    input.select();
+  }
+
+  function closeInlineEditor() {
+    activeInlineEditor?.finish(null);
+  }
+
+  function beginRowEdit(wordId, currentText) {
+    const rows = tape.querySelectorAll(`.row[data-word-id="${CSS.escape(wordId)}"]`);
+    const row = /** @type {HTMLElement | undefined} */ (rows[rows.length - 1]);
+    const cell = row?.querySelector(".col-translation");
+    if (!cell) return;
+
+    // Settle any other open inline editor first, so its cleanup restores the cell's true text before this one snapshots it.
+    closeInlineEditor();
+
+    const originalHtml = cell.innerHTML;
+    cell.innerHTML = "";
+
+    beginInlineInput({
+      createInput: () => {
+        const input = document.createElement("input");
+        cell.appendChild(input);
+        return input;
+      },
+      initialValue: currentText,
+      cleanup: () => {
+        cell.innerHTML = originalHtml;
+      },
+      onSubmit: (text) => vscode.postMessage({ type: "commitEdit", wordId, text }),
+    });
+  }
+
+  function beginInsertRow(wordId, mode) {
+    const row = document.createElement("div");
+    row.className = "row row-inserting";
+    row.setAttribute("role", "option");
+    tape.appendChild(row);
+    tape.scrollTop = tape.scrollHeight;
+
+    beginInlineInput({
+      createInput: () => {
+        const input = document.createElement("input");
+        row.appendChild(input);
+        return input;
+      },
+      placeholder: mode === "before" ? "Insert before…" : "Insert after…",
+      cleanup: () => row.remove(),
+      onSubmit: (text) => vscode.postMessage({ type: "commitInsert", wordId, mode, text }),
+    });
   }
 
   function addEntry(entry) {
@@ -165,6 +290,10 @@
       event.preventDefault();
       focusLastRow();
     }
+    if (isReservedTapeKey(event)) {
+      // Typing into the filter (e.g. searching for "delete") must never leak out as a paper tape command.
+      event.stopPropagation();
+    }
   });
 
   tape.addEventListener("click", (event) => {
@@ -172,6 +301,17 @@
     const row = target.closest(".row");
     if (row && !row.classList.contains("hidden")) {
       setSelectedRow(row);
+      if (row.dataset.wordId) {
+        vscode.postMessage({ type: "wordAction", action: "peek", wordId: row.dataset.wordId });
+      }
+    }
+  });
+
+  tape.addEventListener("dblclick", (event) => {
+    const target = /** @type {HTMLElement} */ (event.target);
+    const row = target.closest(".row");
+    if (row && !row.classList.contains("hidden") && row.dataset.wordId) {
+      vscode.postMessage({ type: "wordAction", action: "edit", wordId: row.dataset.wordId });
     }
   });
 
@@ -205,6 +345,7 @@
         event.preventDefault();
         setSelectedRow(null);
         break;
+      // No case for the reserved tape keys: left unhandled so they bubble out to VS Code's keybinding dispatch.
     }
   });
 
@@ -229,6 +370,17 @@
         break;
       case "focusLast":
         focusLastRow();
+        break;
+      case "wordStatus":
+        for (const update of message.updates) {
+          applyWordStatus(update);
+        }
+        break;
+      case "beginEdit":
+        beginRowEdit(message.wordId, message.currentText);
+        break;
+      case "beginInsert":
+        beginInsertRow(message.wordId, message.mode);
         break;
     }
   });

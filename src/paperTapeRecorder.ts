@@ -1,7 +1,11 @@
 import * as vscode from "vscode";
+import { createDebouncedPersister, type DebouncedPersister } from "./debouncedPersist";
 import { JavelinHidDevice, type JavPaperTapeEventDetail } from "./javelinHidDevice";
-import { logDebug, logInfo } from "./logger";
+import { logDebug, logError, logInfo } from "./logger";
 import { JavelinSettings } from "./settings";
+import { entryIdentity, WordGrouper } from "./paperTapeWordGrouping";
+
+export type PaperTapeEntryKind = "text" | "command" | "keyboard" | "undo";
 
 export interface PaperTapeEntry {
   id: number;
@@ -10,18 +14,20 @@ export interface PaperTapeEntry {
   translation: string;
   undo: number;
   timestamp: number;
+  /** Classification for display/grouping - see paperTapeWordGrouping.ts. */
+  kind: PaperTapeEntryKind;
+  /** Groups entries that combine into one document position (a "word"). */
+  wordId?: string;
+  /** True only for placeholder entries created by the insert-before/insert-after commands. */
+  synthetic?: boolean;
+  /** The active editor's document at record time. */
+  documentUri?: string;
 }
 
 const PERSISTED_ENTRIES_KEY = "javelin.paperTapeEntries";
 const PERSIST_DEBOUNCE_MS = 500;
-const MAX_ENTRIES = 5000;
 
-/** Identifies an entry by content, since `id` is only unique within one window's memory. */
-function entryIdentity(entry: PaperTapeEntry): string {
-  return `${entry.timestamp}|${entry.outline}|${entry.dictionary}|${entry.translation}|${entry.undo}`;
-}
-
-/** Unions on-disk entries with this window's, so persisting never discards history it didn't produce. */
+/** Unions on-disk entries with this window's, so persisting never discards history it didn't produce. Deliberately unbounded. */
 function mergeForPersist(onDisk: PaperTapeEntry[], current: PaperTapeEntry[]): PaperTapeEntry[] {
   const seen = new Set<string>();
   const merged: PaperTapeEntry[] = [];
@@ -33,7 +39,7 @@ function mergeForPersist(onDisk: PaperTapeEntry[], current: PaperTapeEntry[]): P
   }
 
   merged.sort((a, b) => a.timestamp - b.timestamp);
-  return merged.slice(-MAX_ENTRIES).map((entry, index) => ({ ...entry, id: index + 1 }));
+  return merged.map((entry, index) => ({ ...entry, id: index + 1 }));
 }
 
 /**
@@ -51,8 +57,11 @@ export class PaperTapeRecorder {
   private nextId = 1;
   private readonly listeners = new Set<(entry: PaperTapeEntry) => void>();
   private readonly disposables: vscode.Disposable[] = [];
-  private persistTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly persister: DebouncedPersister = createDebouncedPersister(PERSIST_DEBOUNCE_MS, () =>
+    this.persistEntries()
+  );
   private pendingClear = false;
+  private readonly wordGrouper = new WordGrouper();
 
   constructor(
     private readonly device: JavelinHidDevice | undefined,
@@ -93,6 +102,12 @@ export class PaperTapeRecorder {
     return new vscode.Disposable(() => this.listeners.delete(listener));
   }
 
+  /** See `WordGrouper.onWordUpdated` - used by the word/anchor tracker to (re)anchor words in the document. */
+  onWordUpdated(listener: (wordId: string, entries: readonly PaperTapeEntry[]) => void): vscode.Disposable {
+    const unsubscribe = this.wordGrouper.onWordUpdated(listener);
+    return new vscode.Disposable(unsubscribe);
+  }
+
   clear(): void {
     this.entries.length = 0;
     if (this.settings.persistPerWindow) {
@@ -109,11 +124,7 @@ export class PaperTapeRecorder {
     while (this.disposables.length) {
       this.disposables.pop()?.dispose();
     }
-    if (this.persistTimer) {
-      clearTimeout(this.persistTimer);
-      this.persistTimer = undefined;
-      await this.persistEntries();
-    }
+    await this.persister.flush();
   }
 
   private onPaperTape = (ev: CustomEvent<JavPaperTapeEventDetail>) => {
@@ -137,13 +148,39 @@ export class PaperTapeRecorder {
       translation: detail.translation ?? "",
       undo: detail.undo ?? 0,
       timestamp: Date.now(),
+      kind: "text",
+      documentUri: vscode.window.activeTextEditor?.document.uri.toString(),
     };
+    this.recordEntry(entry);
+  };
+
+  /** Appends a placeholder entry for text inserted via the paper tape's insert-before/after commands - no real stroke happened. */
+  appendSynthetic(text: string, documentUri: string): PaperTapeEntry {
+    const entry: PaperTapeEntry = {
+      id: this.nextId++,
+      outline: "",
+      dictionary: "",
+      translation: text,
+      undo: 0,
+      timestamp: Date.now(),
+      kind: "text",
+      synthetic: true,
+      documentUri,
+    };
+    this.recordEntry(entry);
+    return entry;
+  }
+
+  private recordEntry(entry: PaperTapeEntry): void {
+    try {
+      // Word grouping is enrichment, not part of the immutable raw log - it must never be able to stop a stroke from being recorded.
+      this.wordGrouper.onEntry(entry);
+    } catch (err) {
+      logError("PaperTapeRecorder: word grouping failed for a stroke, recording it unclassified", err);
+    }
 
     logInfo(`Recorded paper_tape event: outline="${entry.outline}" translation="${entry.translation}"`);
     this.entries.push(entry);
-    if (this.entries.length > MAX_ENTRIES) {
-      this.entries.shift();
-    }
 
     if (this.settings.persistPerWindow) {
       this.schedulePersist();
@@ -152,7 +189,7 @@ export class PaperTapeRecorder {
     for (const listener of this.listeners) {
       listener(entry);
     }
-  };
+  }
 
   private loadPersistedEntries(): void {
     if (!this.workspaceState) return;
@@ -161,17 +198,21 @@ export class PaperTapeRecorder {
     logInfo(`Loaded ${saved.length} persisted paper tape entries from workspaceState`);
     if (saved.length === 0) return;
 
-    this.entries.push(...saved.slice(-MAX_ENTRIES));
+    this.entries.push(...saved);
+    // Recompute rather than trust whatever's on disk - kind/wordId are deterministically derivable from the other fields.
+    for (const entry of this.entries) {
+      try {
+        this.wordGrouper.onEntry(entry);
+      } catch (err) {
+        logError("PaperTapeRecorder: word grouping failed replaying a persisted stroke, leaving it unclassified", err);
+      }
+    }
     this.nextId = this.entries.reduce((max, e) => Math.max(max, e.id), 0) + 1;
   }
 
   private schedulePersist(): void {
-    if (!this.workspaceState || this.persistTimer) return;
-
-    this.persistTimer = setTimeout(() => {
-      this.persistTimer = undefined;
-      void this.persistEntries();
-    }, PERSIST_DEBOUNCE_MS);
+    if (!this.workspaceState) return;
+    this.persister.schedule();
   }
 
   private async persistEntries(): Promise<void> {

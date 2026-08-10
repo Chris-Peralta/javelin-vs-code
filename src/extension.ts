@@ -4,12 +4,14 @@ import { isHidSupported, JavelinHidDevice } from "./javelinHidDevice";
 import { logInfo, setLogLevel } from "./logger";
 import { PaperTapePanel } from "./paperTapePanel";
 import { PaperTapeRecorder } from "./paperTapeRecorder";
+import { PaperTapeWordTracker } from "./paperTapeWordTracker";
 import { JavelinSettings } from "./settings";
 import { StatusViewProvider } from "./statusViewProvider";
 import { SuggestionTracker } from "./suggestionTracker";
 
 let device: JavelinHidDevice | undefined;
 let recorder: PaperTapeRecorder | undefined;
+let wordTracker: PaperTapeWordTracker | undefined;
 let suggestionTracker: SuggestionTracker | undefined;
 let settings: JavelinSettings | undefined;
 let focusTracker: AppFocusTracker | undefined;
@@ -30,12 +32,14 @@ export function activate(context: vscode.ExtensionContext) {
   const currentFocusTracker = new AppFocusTracker(context);
   focusTracker = currentFocusTracker;
 
-  recorder = new PaperTapeRecorder(
+  const currentRecorder = new PaperTapeRecorder(
     device,
     currentSettings,
     () => currentFocusTracker.isFocused(),
     context.workspaceState
   );
+  recorder = currentRecorder;
+  wordTracker = new PaperTapeWordTracker(currentRecorder, currentSettings, context.workspaceState);
 
   const currentSuggestionTracker = new SuggestionTracker(
     device,
@@ -57,13 +61,23 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand("javelin.showPaperTape", () => {
-      PaperTapePanel.createOrShow(context.extensionUri, recorder, currentSettings);
+      PaperTapePanel.createOrShow(context.extensionUri, recorder, wordTracker, currentSettings);
     })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("javelin.paperTape.jumpToWord", () => PaperTapePanel.jumpToSelected()),
+    vscode.commands.registerCommand("javelin.paperTape.peekWord", () => PaperTapePanel.peekSelected()),
+    vscode.commands.registerCommand("javelin.paperTape.editWord", () => PaperTapePanel.editSelected()),
+    vscode.commands.registerCommand("javelin.paperTape.deleteWord", () => PaperTapePanel.deleteSelected()),
+    vscode.commands.registerCommand("javelin.paperTape.insertBefore", () => PaperTapePanel.insertBeforeSelected()),
+    vscode.commands.registerCommand("javelin.paperTape.insertAfter", () => PaperTapePanel.insertAfterSelected())
   );
 }
 
 export async function deactivate(): Promise<void> {
   PaperTapePanel.disposeCurrent();
+  await wordTracker?.dispose();
   await recorder?.dispose();
   suggestionTracker?.dispose();
   settings?.dispose();

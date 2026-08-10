@@ -56,6 +56,45 @@ test("records a stroke while focused, with backgroundMonitoring off", () => {
   assert.equal(recorder.getEntries()[0].translation, "this");
 });
 
+test("appendSynthetic records a placeholder entry for a manually inserted word", () => {
+  const recorder = new PaperTapeRecorder(undefined, makeSettings(), () => true);
+
+  const entry = recorder.appendSynthetic("official", "file:///doc.txt");
+
+  assert.equal(recorder.getEntries().length, 1);
+  assert.equal(recorder.getEntries()[0], entry);
+  assert.equal(entry.outline, "");
+  assert.equal(entry.dictionary, "");
+  assert.equal(entry.translation, "official");
+  assert.equal(entry.synthetic, true);
+  assert.equal(entry.documentUri, "file:///doc.txt");
+  assert.ok(entry.wordId, "it should still be grouped into a word, like a real stroke");
+});
+
+test("appendSynthetic notifies onAppend listeners, same as a real stroke", () => {
+  const recorder = new PaperTapeRecorder(undefined, makeSettings(), () => true);
+  const appended: string[] = [];
+  recorder.onAppend((entry) => appended.push(entry.translation));
+
+  recorder.appendSynthetic("official", "file:///doc.txt");
+
+  assert.deepEqual(appended, ["official"]);
+});
+
+test("a throwing onWordUpdated listener does not prevent the stroke from being recorded", () => {
+  // A failure in a downstream listener must never silently drop entries from the tape's immutable raw record.
+  const device = new FakeDevice();
+  const recorder = new PaperTapeRecorder(device as unknown as JavelinHidDevice, makeSettings(), () => true);
+  recorder.onWordUpdated(() => {
+    throw new Error("simulated failure in a downstream listener (e.g. anchor tracking)");
+  });
+
+  device.strike("TH", "this");
+
+  assert.equal(recorder.getEntries().length, 1);
+  assert.equal(recorder.getEntries()[0].translation, "this");
+});
+
 test("does not record while unfocused, with backgroundMonitoring off", () => {
   const device = new FakeDevice();
   const recorder = new PaperTapeRecorder(device as unknown as JavelinHidDevice, makeSettings(), () => false);
