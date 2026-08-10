@@ -59,6 +59,11 @@
     ],
     "keybindings": [
       {
+        "command": "javelin.showPaperTape",
+        "key": "ctrl+alt+p",
+        "mac": "cmd+alt+p"
+      },
+      {
         "command": "javelin.paperTape.jumpToWord",
         "key": "enter",
         "when": "javelinPaperTapeFocused"
