@@ -39,7 +39,9 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.bump.outputs.version }}
+      version: ${{ steps.version.outputs.version }}
+      ref: ${{ steps.version.outputs.ref }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -49,16 +51,24 @@ jobs:
         with:
           node-version: 26
 
-      - name: Bump package.json version
-        id: bump
+      - name: Determine release version
+        id: version
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          npm version "${{ inputs.bump }}" -m "chore: release v%s"
-          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
-
-      - name: Push commit and tag
-        run: git push --follow-tags
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            npm version "${{ inputs.bump }}" -m "chore: release v%s"
+            git push --follow-tags
+            version="$(node -p "require('./package.json').version")"
+            echo "ref=v$version" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            base="$(node -p "require('./package.json').version")"
+            version="${base}-beta.${{ github.run_number }}"
+            echo "ref=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
   build:
     needs: bump-version
@@ -74,7 +84,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: v${{ needs.bump-version.outputs.version }}
+          ref: ${{ needs.bump-version.outputs.ref }}
 
       - uses: actions/setup-node@v7
         with:
@@ -85,6 +95,10 @@ jobs:
 
       - name: Compile
         run: npm run compile
+
+      - name: Set beta version
+        if: needs.bump-version.outputs.prerelease == 'true'
+        run: npm version "${{ needs.bump-version.outputs.version }}" --no-git-tag-version --allow-same-version
 
       - name: Prune node-hid prebuilds for target
         run: node scripts/prune-prebuilds.js ${{ matrix.target }}
@@ -110,8 +124,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          args=()
+          if [ "${{ needs.bump-version.outputs.prerelease }}" = "true" ]; then
+            # tag doesn't exist yet for beta builds, so point it at the commit that was built
+            args+=(--prerelease --target "${{ needs.bump-version.outputs.ref }}")
+          fi
           gh release create "v${{ needs.bump-version.outputs.version }}" \
             dist/*.vsix \
             --repo "${{ github.repository }}" \
             --title "v${{ needs.bump-version.outputs.version }}" \
-            --generate-notes
+            --generate-notes \
+            "${args[@]}"
