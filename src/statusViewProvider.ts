@@ -114,7 +114,7 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
     });
     if (!uri) return;
 
-    await fs.promises.writeFile(uri.fsPath, formatPaperTapeExport(this.recorder?.getEntries() ?? []));
+    await fs.promises.writeFile(uri.fsPath, formatPaperTapeExport(this.recorder?.getAllEntries() ?? []));
   }
 
   private postSuggestions() {

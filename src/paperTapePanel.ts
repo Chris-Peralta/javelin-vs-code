@@ -7,6 +7,8 @@ import { getNonce } from "./nonce";
 
 /** Context key the paper tape editing commands' keybindings are scoped to, so they only fire while this panel is the focused tab. */
 const FOCUSED_CONTEXT_KEY = "javelinPaperTapeFocused";
+/** Entries per page for the initial load and each infinite-scroll "load older" batch. */
+const PAGE_SIZE = 200;
 
 /**
  * Manages the single "Javelin Paper Tape" webview panel. Strokes are recorded by the
@@ -14,8 +16,13 @@ const FOCUSED_CONTEXT_KEY = "javelinPaperTapeFocused";
  * whether this panel is open; this class just displays the buffered history and
  * live-streams new entries while it's open.
  *
+ * Only the most recent page loads up front - older history (when persisted) is fetched
+ * a page at a time as the webview scrolls up (see "loadOlder"/"olderEntries" below),
+ * so opening the panel doesn't have to pull a whole (potentially large) history into
+ * memory at once.
+ *
  * Filtering (hiding rows, and pausing new rows while any part of the panel is focused)
- * is handled entirely client-side in media/main.js - this class just streams every entry.
+ * is handled entirely client-side in media/main.js.
  */
 export class PaperTapePanel {
   private static current: PaperTapePanel | undefined;
@@ -25,6 +32,8 @@ export class PaperTapePanel {
   private selectedWordId: string | undefined;
   // Gates the command handlers themselves, since the same commands are also Command Palette-reachable regardless of keybinding focus.
   private focused = false;
+  // The oldest entry currently loaded into the webview - the cursor for the next "load older" page.
+  private oldestLoadedEntry: PaperTapeEntry | undefined;
 
   static createOrShow(
     extensionUri: vscode.Uri,
@@ -90,6 +99,7 @@ export class PaperTapePanel {
 
     if (this.recorder) {
       this.disposables.push(this.recorder.onAppend(this.onAppend));
+      this.disposables.push(this.recorder.onClear(this.onClear));
     }
 
     if (this.wordTracker) {
@@ -114,6 +124,11 @@ export class PaperTapePanel {
 
   private onAppend = (entry: PaperTapeEntry) => {
     void this.panel.webview.postMessage({ type: "append", entry });
+  };
+
+  private onClear = () => {
+    this.oldestLoadedEntry = undefined;
+    void this.panel.webview.postMessage({ type: "clear" });
   };
 
   private focusLastRow(): void {
@@ -142,6 +157,12 @@ export class PaperTapePanel {
     void this.panel.webview.postMessage({ type: "wordStatus", updates });
   }
 
+  /** Seeds status for words in a newly loaded page, since a reopened/scrolled-into page shows no decoration until a future edit touches the anchor. */
+  private seedWordStatuses(entries: readonly PaperTapeEntry[]): void {
+    const wordIds = [...new Set(entries.map((e) => e.wordId).filter((id): id is string => !!id))];
+    this.postWordStatuses(wordIds);
+  }
+
   private onMessage(message: {
     type: string;
     action?: string;
@@ -150,15 +171,26 @@ export class PaperTapePanel {
     text?: string;
   }) {
     if (message.type === "ready") {
-      const entries = this.recorder?.getEntries() ?? [];
+      const page = this.recorder?.getRecentEntries(PAGE_SIZE) ?? { entries: [], hasMore: false };
+      this.oldestLoadedEntry = page.entries[0];
       void this.panel.webview.postMessage({
         type: "init",
-        entries,
+        entries: page.entries,
+        hasMore: page.hasMore,
         showTimestamps: this.settings.showTimestamps,
       });
-      // Seeds status for words already known to the tracker, since a reopened webview otherwise shows no decoration until a future edit touches the anchor.
-      const wordIds = [...new Set(entries.map((e) => e.wordId).filter((id): id is string => !!id))];
-      this.postWordStatuses(wordIds);
+      this.seedWordStatuses(page.entries);
+    } else if (message.type === "loadOlder") {
+      const page = this.oldestLoadedEntry
+        ? (this.recorder?.getOlderEntries(this.oldestLoadedEntry, PAGE_SIZE) ?? { entries: [], hasMore: false })
+        : { entries: [], hasMore: false };
+      if (page.entries[0]) this.oldestLoadedEntry = page.entries[0];
+      void this.panel.webview.postMessage({
+        type: "olderEntries",
+        entries: page.entries,
+        hasMore: page.hasMore,
+      });
+      this.seedWordStatuses(page.entries);
     } else if (message.type === "selectionChanged") {
       this.selectedWordId = message.wordId ?? undefined;
     } else if (message.type === "wordAction" && message.wordId) {

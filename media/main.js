@@ -12,6 +12,10 @@
   let rowCounter = 0;
   /** @type {{ finish: (value: string | null) => void } | null} */
   let activeInlineEditor = null;
+  // Infinite-scroll-upward state for older history (see the "loadOlder"/"olderEntries" messages).
+  let hasMoreOlder = false;
+  let loadingOlder = false;
+  const LOAD_OLDER_THRESHOLD_PX = 100;
 
   function formatTimestamp(ms) {
     return new Date(ms).toLocaleTimeString([], { hour12: false });
@@ -36,7 +40,7 @@
     return key === "enter" || key === "f2" || key === "delete";
   }
 
-  function renderRow(entry) {
+  function buildRow(entry) {
     const row = document.createElement("div");
     row.className = "row";
     if (entry.kind && entry.kind !== "text") {
@@ -80,14 +84,52 @@
     row.appendChild(timestamp);
     row.appendChild(outline);
     row.appendChild(translation);
-    tape.appendChild(row);
+    return row;
+  }
 
+  function applyFilterToRow(row) {
     const filterValue = filterInput.value.trim().toLowerCase();
     if (filterValue && !rowMatchesFilter(row, filterValue)) {
       row.classList.add("hidden");
     }
+  }
 
+  function renderRow(entry) {
+    const row = buildRow(entry);
+    tape.appendChild(row);
+    applyFilterToRow(row);
     tape.scrollTop = tape.scrollHeight;
+  }
+
+  /** Inserts a page of older entries (oldest first) above everything currently loaded, keepingcontent stable instead of jumping. */
+  function prependEntries(entries) {
+    if (entries.length === 0) return;
+
+    const previousScrollHeight = tape.scrollHeight;
+    const previousScrollTop = tape.scrollTop;
+
+    const fragment = document.createDocumentFragment();
+    for (const entry of entries) {
+      const row = buildRow(entry);
+      applyFilterToRow(row);
+      fragment.appendChild(row);
+    }
+    tape.insertBefore(fragment, tape.firstChild);
+
+    tape.scrollTop = previousScrollTop + (tape.scrollHeight - previousScrollHeight);
+  }
+
+  /** If the loaded page doesn't fill the viewport, there's no scrollbar and trigger the next page - so keep pulling pages until it either fills up or history runs out. */
+  function fillViewportIfNeeded() {
+    if (hasMoreOlder && !loadingOlder && tape.scrollHeight <= tape.clientHeight) {
+      requestOlderEntries();
+    }
+  }
+
+  function requestOlderEntries() {
+    if (!hasMoreOlder || loadingOlder) return;
+    loadingOlder = true;
+    vscode.postMessage({ type: "loadOlder" });
   }
 
   function getVisibleRows() {
@@ -315,6 +357,11 @@
     }
   });
 
+  tape.addEventListener("scroll", () => {
+    if (tape.scrollTop > LOAD_OLDER_THRESHOLD_PX) return;
+    requestOlderEntries();
+  });
+
   tape.addEventListener("keydown", (event) => {
     switch (event.key) {
       case "ArrowDown":
@@ -356,14 +403,29 @@
         setShowTimestamps(message.showTimestamps);
         tape.innerHTML = "";
         selectedRow = null;
+        hasMoreOlder = !!message.hasMore;
+        loadingOlder = false;
         for (const entry of message.entries) {
           renderRow(entry);
         }
         applyFilterToExistingRows(filterInput.value.trim().toLowerCase());
         focusLastRow();
+        fillViewportIfNeeded();
+        break;
+      case "olderEntries":
+        prependEntries(message.entries);
+        hasMoreOlder = !!message.hasMore;
+        loadingOlder = false;
+        fillViewportIfNeeded();
         break;
       case "append":
         addEntry(message.entry);
+        break;
+      case "clear":
+        tape.innerHTML = "";
+        selectedRow = null;
+        hasMoreOlder = false;
+        loadingOlder = false;
         break;
       case "settings":
         setShowTimestamps(message.showTimestamps);

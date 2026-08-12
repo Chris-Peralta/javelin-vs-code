@@ -121,10 +121,12 @@
     "test": "node --require tsx/cjs --require ./test/register.cjs --test \"test/**/*.test.ts\""
   },
   "dependencies": {
+    "better-sqlite3": "^13.0.3",
     "js-yaml": "^5.2.2",
     "node-hid": "^3.4.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "@types/jsdom": "^30.0.0",
     "@types/node": "^26.1.2",
     "@types/vscode": "^1.85.0",

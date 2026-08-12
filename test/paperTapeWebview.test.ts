@@ -103,6 +103,19 @@ test("resumes writing strokes once focus leaves the tape", async () => {
   assert.equal(tape.children.length, 1, "entries should resume once focus leaves the panel");
 });
 
+test("a clear message empties the tape, e.g. after the store's entries and anchors were wiped", () => {
+  const { window, tape } = createPanel();
+  appendEntry(window, "one");
+  appendEntry(window, "two");
+  assert.equal(tape.children.length, 2);
+
+  window.dispatchEvent(new window.MessageEvent("message", { data: { type: "clear" } }));
+
+  assert.equal(tape.children.length, 0);
+  appendEntry(window, "after clear");
+  assert.equal(tape.children.length, 1, "the tape should still accept new rows after a clear");
+});
+
 test("does not write new strokes to the tape while the filter box has focus", () => {
   const { window, tape, filterInput } = createPanel();
 
@@ -414,4 +427,105 @@ test("a wordStatus message marks a deleted word's row with strikethrough", () =>
   );
 
   assert.ok(tape.querySelector('.row[data-word-id="w1"]')?.classList.contains("status-deleted"));
+});
+
+function sendMessage(window: DOMWindow, data: unknown): void {
+  window.dispatchEvent(new window.MessageEvent("message", { data }));
+}
+
+function pageEntries(count: number, startTimestamp: number): { timestamp: number; outline: string; translation: string }[] {
+  return Array.from({ length: count }, (_, i) => ({
+    timestamp: startTimestamp + i,
+    outline: "TH",
+    translation: `w${startTimestamp + i}`,
+  }));
+}
+
+function loadOlderCount(postedMessages: unknown[]): number {
+  return postedMessages.filter((m) => (m as { type?: string }).type === "loadOlder").length;
+}
+
+/** Shadows jsdom's hardcoded-0 layout getters so the panel sees an already-scrollable viewport, isolating the scroll listener from the init/olderEntries auto-fill check (which would otherwise always fire in a real 0-height jsdom layout). */
+function makeScrollable(tape: HTMLElement): void {
+  Object.defineProperty(tape, "clientHeight", { value: 50, configurable: true });
+  Object.defineProperty(tape, "scrollHeight", { value: 500, configurable: true });
+}
+
+test("init with hasMore true automatically requests another page when the loaded page doesn't fill the viewport", () => {
+  const { window, postedMessages } = createPanel();
+
+  sendMessage(window, { type: "init", entries: pageEntries(2, 10), hasMore: true, showTimestamps: false });
+
+  assert.equal(loadOlderCount(postedMessages), 1);
+});
+
+test("init with hasMore false does not request further pages", () => {
+  const { window, postedMessages } = createPanel();
+
+  sendMessage(window, { type: "init", entries: pageEntries(2, 10), hasMore: false, showTimestamps: false });
+
+  assert.equal(loadOlderCount(postedMessages), 0);
+});
+
+test("an olderEntries message prepends rows above the existing ones, oldest first", () => {
+  const { window, tape } = createPanel();
+  makeScrollable(tape); // avoid the auto-fill request reordering things before the explicit olderEntries below
+
+  sendMessage(window, { type: "init", entries: pageEntries(2, 10), hasMore: true, showTimestamps: false });
+  sendMessage(window, { type: "olderEntries", entries: pageEntries(2, 8), hasMore: false });
+
+  const translations = Array.from(tape.querySelectorAll(".row")).map(
+    (row) => row.querySelector(".col-translation")?.textContent
+  );
+  assert.deepEqual(translations, ["w8", "w9", "w10", "w11"]);
+});
+
+test("automatic page-filling stops once hasMore becomes false", () => {
+  const { window, postedMessages } = createPanel();
+
+  sendMessage(window, { type: "init", entries: pageEntries(2, 10), hasMore: true, showTimestamps: false });
+  assert.equal(loadOlderCount(postedMessages), 1, "sanity: the first automatic request happened");
+
+  sendMessage(window, { type: "olderEntries", entries: pageEntries(2, 8), hasMore: false });
+
+  assert.equal(loadOlderCount(postedMessages), 1, "no further requests once hasMore is false");
+});
+
+test("scrolling near the top requests another page when more history is available", () => {
+  const { window, tape, postedMessages } = createPanel();
+  makeScrollable(tape);
+
+  sendMessage(window, { type: "init", entries: pageEntries(2, 10), hasMore: true, showTimestamps: false });
+  assert.equal(loadOlderCount(postedMessages), 0, "sanity: nothing requested yet - the viewport already looks filled");
+
+  tape.scrollTop = 0;
+  tape.dispatchEvent(new window.Event("scroll"));
+
+  assert.equal(loadOlderCount(postedMessages), 1);
+});
+
+test("scrolling while not near the top does not request another page", () => {
+  const { window, tape, postedMessages } = createPanel();
+  makeScrollable(tape);
+
+  sendMessage(window, { type: "init", entries: pageEntries(2, 10), hasMore: true, showTimestamps: false });
+
+  tape.scrollTop = 400;
+  tape.dispatchEvent(new window.Event("scroll"));
+
+  assert.equal(loadOlderCount(postedMessages), 0);
+});
+
+test("a second scroll event while a page is already loading does not send a duplicate request", () => {
+  const { window, tape, postedMessages } = createPanel();
+  makeScrollable(tape);
+
+  sendMessage(window, { type: "init", entries: pageEntries(2, 10), hasMore: true, showTimestamps: false });
+  tape.scrollTop = 0;
+  tape.dispatchEvent(new window.Event("scroll"));
+  assert.equal(loadOlderCount(postedMessages), 1);
+
+  tape.dispatchEvent(new window.Event("scroll")); // still "loading" - the extension hasn't responded yet
+
+  assert.equal(loadOlderCount(postedMessages), 1, "no duplicate request while one is already in flight");
 });

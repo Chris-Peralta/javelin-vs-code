@@ -1,9 +1,13 @@
 import * as vscode from "vscode";
+import * as fs from "fs";
+import * as path from "path";
 import { AppFocusTracker } from "./appFocusTracker";
 import { isHidSupported, JavelinHidDevice } from "./javelinHidDevice";
-import { logInfo, setLogLevel } from "./logger";
+import { logError, logInfo, setLogLevel } from "./logger";
 import { PaperTapePanel } from "./paperTapePanel";
 import { PaperTapeRecorder } from "./paperTapeRecorder";
+import { SqlitePaperTapeStore } from "./paperTapeSqliteStore";
+import type { PaperTapeStore } from "./paperTapeStore";
 import { PaperTapeWordTracker } from "./paperTapeWordTracker";
 import { JavelinSettings } from "./settings";
 import { StatusViewProvider } from "./statusViewProvider";
@@ -15,6 +19,19 @@ let wordTracker: PaperTapeWordTracker | undefined;
 let suggestionTracker: SuggestionTracker | undefined;
 let settings: JavelinSettings | undefined;
 let focusTracker: AppFocusTracker | undefined;
+let paperTapeStore: PaperTapeStore | undefined;
+
+/** Workspace-scoped - shared by every window on this workspace. Falls back to global storage for windows with no workspace open. */
+function openPaperTapeStore(context: vscode.ExtensionContext): PaperTapeStore | undefined {
+  const dir = context.storageUri?.fsPath ?? context.globalStorageUri.fsPath;
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    return new SqlitePaperTapeStore(path.join(dir, "paperTape.sqlite"));
+  } catch (err) {
+    logError("Failed to open paper tape store, persistence will be unavailable this session", err);
+    return undefined;
+  }
+}
 
 export function activate(context: vscode.ExtensionContext) {
   const currentSettings = new JavelinSettings(context);
@@ -32,14 +49,17 @@ export function activate(context: vscode.ExtensionContext) {
   const currentFocusTracker = new AppFocusTracker(context);
   focusTracker = currentFocusTracker;
 
+  const currentStore = openPaperTapeStore(context);
+  paperTapeStore = currentStore;
+
   const currentRecorder = new PaperTapeRecorder(
     device,
     currentSettings,
     () => currentFocusTracker.isFocused(),
-    context.workspaceState
+    currentStore
   );
   recorder = currentRecorder;
-  wordTracker = new PaperTapeWordTracker(currentRecorder, currentSettings, context.workspaceState);
+  wordTracker = new PaperTapeWordTracker(currentRecorder, currentSettings, currentStore);
 
   const currentSuggestionTracker = new SuggestionTracker(
     device,
@@ -82,5 +102,6 @@ export async function deactivate(): Promise<void> {
   suggestionTracker?.dispose();
   settings?.dispose();
   focusTracker?.dispose();
+  paperTapeStore?.close();
   await device?.destroy();
 }

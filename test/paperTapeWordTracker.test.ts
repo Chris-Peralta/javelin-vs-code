@@ -1,21 +1,31 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { PaperTapeWordTracker, type TrackedDocumentChange } from "../src/paperTapeWordTracker";
+import { PaperTapeWordTracker, type TrackedDocumentChange, type TrackedFileDeleteEvent } from "../src/paperTapeWordTracker";
 import type { PaperTapeRecorder, PaperTapeEntry } from "../src/paperTapeRecorder";
 import type { JavelinSettings, JavelinSettingsSnapshot } from "../src/settings";
-import { FakeMemento } from "./fakeMemento";
+import { FakePaperTapeStore } from "./fakePaperTapeStore";
 
-/** Stands in for PaperTapeRecorder: records the WordTracker's listener and lets tests fire word updates. */
+/** Stands in for PaperTapeRecorder: records the WordTracker's listeners and lets tests fire word updates / clears. */
 class FakeRecorder {
   private listener: ((wordId: string, entries: readonly PaperTapeEntry[]) => void) | undefined;
+  private clearListener: (() => void) | undefined;
 
   onWordUpdated(listener: (wordId: string, entries: readonly PaperTapeEntry[]) => void) {
     this.listener = listener;
     return { dispose: () => (this.listener = undefined) };
   }
 
+  onClear(listener: () => void) {
+    this.clearListener = listener;
+    return { dispose: () => (this.clearListener = undefined) };
+  }
+
   fire(wordId: string, entries: readonly PaperTapeEntry[]): void {
     this.listener?.(wordId, entries);
+  }
+
+  fireClear(): void {
+    this.clearListener?.();
   }
 }
 
@@ -67,6 +77,7 @@ interface Harness {
   tracker: PaperTapeWordTracker;
   setCursor(offset: number): void;
   change(c: Partial<TrackedDocumentChange>): void;
+  deleteFiles(uris: string[]): void;
 }
 
 function createHarness(initialText: string, uri = "file:///doc.txt"): Harness {
@@ -74,6 +85,7 @@ function createHarness(initialText: string, uri = "file:///doc.txt"): Harness {
   const doc = new FakeDocument(uri, initialText);
   let cursorOffset = initialText.length;
   let changeListener: ((changes: TrackedDocumentChange[]) => void) | undefined;
+  let deleteListener: ((e: TrackedFileDeleteEvent) => void) | undefined;
 
   const tracker = new PaperTapeWordTracker(
     recorder as unknown as PaperTapeRecorder,
@@ -89,6 +101,10 @@ function createHarness(initialText: string, uri = "file:///doc.txt"): Harness {
     (run) => {
       run();
       return () => {};
+    },
+    (listener) => {
+      deleteListener = listener;
+      return { dispose: () => (deleteListener = undefined) };
     }
   );
 
@@ -103,6 +119,7 @@ function createHarness(initialText: string, uri = "file:///doc.txt"): Harness {
       doc.text = doc.text.slice(0, full.rangeOffset) + full.text + doc.text.slice(full.rangeOffset + full.rangeLength);
       changeListener?.([full]);
     },
+    deleteFiles: (uris) => deleteListener?.({ uris }),
   };
 }
 
@@ -393,6 +410,72 @@ test("deleting the anchor's region entirely is reported as deleted", () => {
   assert.deepEqual(h.tracker.getWordStatus("w1"), { state: "deleted" });
 });
 
+test("deleting a file marks its anchored words as deleted", () => {
+  const h = createHarness("hello world");
+  h.setCursor(11);
+  h.recorder.fire("w1", [entry({ translation: "world" })]);
+
+  h.deleteFiles(["file:///doc.txt"]);
+
+  assert.deepEqual(h.tracker.getWordStatus("w1"), { state: "deleted" });
+});
+
+test("deleting a file reports its words as deleted even when the document isn't open (e.g. an unopened file deleted from the explorer)", () => {
+  const recorder = new FakeRecorder();
+  let deleteListener: ((e: TrackedFileDeleteEvent) => void) | undefined;
+
+  const tracker = new PaperTapeWordTracker(
+    recorder as unknown as PaperTapeRecorder,
+    undefined,
+    undefined,
+    () => undefined,
+    () => undefined, // document never open
+    () => ({ dispose: () => {} }),
+    undefined,
+    (listener) => {
+      deleteListener = listener;
+      return { dispose: () => (deleteListener = undefined) };
+    }
+  );
+  tracker.registerInsertedAnchor("w1", "file:///doc.txt", 6, "world");
+
+  deleteListener?.({ uris: ["file:///doc.txt"] });
+
+  assert.deepEqual(tracker.getWordStatus("w1"), { state: "deleted" });
+});
+
+test("deleting a folder marks anchors nested under it as deleted, but leaves unrelated files alone", () => {
+  const recorder = new FakeRecorder();
+  const docA = new FakeDocument("file:///proj/src/a.txt", "hello world");
+  const docB = new FakeDocument("file:///proj/other.txt", "unrelated document");
+  let deleteListener: ((e: TrackedFileDeleteEvent) => void) | undefined;
+
+  const tracker = new PaperTapeWordTracker(
+    recorder as unknown as PaperTapeRecorder,
+    undefined,
+    undefined,
+    () => ({ documentUri: docA.uri, cursorOffset: docA.text.length }),
+    (u) => (u === docA.uri ? docA : u === docB.uri ? docB : undefined),
+    () => ({ dispose: () => {} }),
+    (run) => {
+      run();
+      return () => {};
+    },
+    (listener) => {
+      deleteListener = listener;
+      return { dispose: () => (deleteListener = undefined) };
+    }
+  );
+
+  recorder.fire("w-a", [entry({ translation: "world", documentUri: docA.uri })]);
+  tracker.registerInsertedAnchor("w-b", docB.uri, 0, "unrelated");
+
+  deleteListener?.({ uris: ["file:///proj/src"] });
+
+  assert.deepEqual(tracker.getWordStatus("w-a"), { state: "deleted" });
+  assert.deepEqual(tracker.getWordStatus("w-b"), { state: "unmodified" });
+});
+
 test("an anchor whose document isn't open is reported unmodified (best effort - can't verify)", () => {
   const h = createHarness("hello world");
   h.setCursor(11);
@@ -443,15 +526,15 @@ test("a change in a different open document does not touch an anchor in this one
   assert.equal(tracker.getAnchor("w1")?.offset, 6);
 });
 
-test("does not persist anchors to workspaceState when persistPerWindow is off", async () => {
+test("does not persist anchors to the store when persistPerWindow is off", async () => {
   const recorder = new FakeRecorder();
   const doc = new FakeDocument("file:///doc.txt", "hello world");
-  const workspaceState = new FakeMemento();
+  const store = new FakePaperTapeStore();
 
   const tracker = new PaperTapeWordTracker(
     recorder as unknown as PaperTapeRecorder,
     new FakeSettings(false) as unknown as JavelinSettings,
-    workspaceState,
+    store,
     () => ({ documentUri: doc.uri, cursorOffset: doc.text.length }),
     (u) => (u === doc.uri ? doc : undefined),
     () => ({ dispose: () => {} }),
@@ -464,18 +547,18 @@ test("does not persist anchors to workspaceState when persistPerWindow is off", 
   recorder.fire("w1", [entry({ translation: "world" })]);
   await tracker.dispose();
 
-  assert.deepEqual(workspaceState.keys(), []);
+  assert.deepEqual(store.loadAnchors(), []);
 });
 
-test("persists anchors to workspaceState when persistPerWindow is on", async () => {
+test("persists anchors to the store when persistPerWindow is on", async () => {
   const recorder = new FakeRecorder();
   const doc = new FakeDocument("file:///doc.txt", "hello world");
-  const workspaceState = new FakeMemento();
+  const store = new FakePaperTapeStore();
 
   const tracker = new PaperTapeWordTracker(
     recorder as unknown as PaperTapeRecorder,
     new FakeSettings(true) as unknown as JavelinSettings,
-    workspaceState,
+    store,
     () => ({ documentUri: doc.uri, cursorOffset: doc.text.length }),
     (u) => (u === doc.uri ? doc : undefined),
     () => ({ dispose: () => {} }),
@@ -489,22 +572,28 @@ test("persists anchors to workspaceState when persistPerWindow is on", async () 
   // dispose() flushes the debounced write immediately instead of waiting out the 500ms debounce.
   await tracker.dispose();
 
-  const saved = workspaceState.get<{ wordId: string }[]>("javelin.paperTapeAnchors", []);
-  assert.deepEqual(saved.map((a) => a.wordId), ["w1"]);
+  assert.deepEqual(
+    store.loadAnchors().map((a) => a.wordId),
+    ["w1"]
+  );
 });
 
 test("loads previously persisted anchors on construction when persistPerWindow is on", () => {
-  const workspaceState = new FakeMemento({
-    "javelin.paperTapeAnchors": [
-      { wordId: "w1", documentUri: "file:///doc.txt", origin: "stroke", offset: 0, length: 5, originalText: "hello" },
-    ],
+  const store = new FakePaperTapeStore();
+  store.upsertAnchor({
+    wordId: "w1",
+    documentUri: "file:///doc.txt",
+    origin: "stroke",
+    offset: 0,
+    length: 5,
+    originalText: "hello",
   });
   const recorder = new FakeRecorder();
 
   const tracker = new PaperTapeWordTracker(
     recorder as unknown as PaperTapeRecorder,
     new FakeSettings(true) as unknown as JavelinSettings,
-    workspaceState,
+    store,
     undefined,
     undefined,
     () => ({ dispose: () => {} })
@@ -514,17 +603,21 @@ test("loads previously persisted anchors on construction when persistPerWindow i
 });
 
 test("does not load previously persisted anchors when persistPerWindow is off", () => {
-  const workspaceState = new FakeMemento({
-    "javelin.paperTapeAnchors": [
-      { wordId: "w1", documentUri: "file:///doc.txt", origin: "stroke", offset: 0, length: 5, originalText: "hello" },
-    ],
+  const store = new FakePaperTapeStore();
+  store.upsertAnchor({
+    wordId: "w1",
+    documentUri: "file:///doc.txt",
+    origin: "stroke",
+    offset: 0,
+    length: 5,
+    originalText: "hello",
   });
   const recorder = new FakeRecorder();
 
   const tracker = new PaperTapeWordTracker(
     recorder as unknown as PaperTapeRecorder,
     new FakeSettings(false) as unknown as JavelinSettings,
-    workspaceState,
+    store,
     undefined,
     undefined,
     () => ({ dispose: () => {} })
@@ -536,13 +629,13 @@ test("does not load previously persisted anchors when persistPerWindow is off", 
 test("turning persistPerWindow on mid-session persists what was already tracked", async () => {
   const recorder = new FakeRecorder();
   const doc = new FakeDocument("file:///doc.txt", "hello world");
-  const workspaceState = new FakeMemento();
+  const store = new FakePaperTapeStore();
   const settings = new FakeSettings(false);
 
   const tracker = new PaperTapeWordTracker(
     recorder as unknown as PaperTapeRecorder,
     settings as unknown as JavelinSettings,
-    workspaceState,
+    store,
     () => ({ documentUri: doc.uri, cursorOffset: doc.text.length }),
     (u) => (u === doc.uri ? doc : undefined),
     () => ({ dispose: () => {} }),
@@ -553,13 +646,43 @@ test("turning persistPerWindow on mid-session persists what was already tracked"
   );
 
   recorder.fire("w1", [entry({ translation: "world" })]);
-  assert.deepEqual(workspaceState.keys(), []);
+  assert.deepEqual(store.loadAnchors(), []);
 
   settings.set(true);
   await tracker.dispose();
 
-  const saved = workspaceState.get<{ wordId: string }[]>("javelin.paperTapeAnchors", []);
-  assert.deepEqual(saved.map((a) => a.wordId), ["w1"]);
+  assert.deepEqual(
+    store.loadAnchors().map((a) => a.wordId),
+    ["w1"]
+  );
+});
+
+test("the recorder clearing the tape wipes every anchor, including from the store", () => {
+  const recorder = new FakeRecorder();
+  const store = new FakePaperTapeStore();
+  store.upsertAnchor({
+    wordId: "w1",
+    documentUri: "file:///doc.txt",
+    origin: "stroke",
+    offset: 0,
+    length: 5,
+    originalText: "hello",
+  });
+
+  const tracker = new PaperTapeWordTracker(
+    recorder as unknown as PaperTapeRecorder,
+    new FakeSettings(true) as unknown as JavelinSettings,
+    store,
+    undefined,
+    undefined,
+    () => ({ dispose: () => {} })
+  );
+  assert.ok(tracker.getAnchor("w1"), "the persisted anchor loads on construction");
+
+  recorder.fireClear();
+
+  assert.equal(tracker.getAnchor("w1"), undefined);
+  assert.deepEqual(store.loadAnchors(), []);
 });
 
 test("anchors are never evicted, no matter how many accumulate", () => {

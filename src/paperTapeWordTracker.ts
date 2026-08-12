@@ -4,6 +4,7 @@ import { logDebug, logError, logInfo } from "./logger";
 import { PaperTapeRecorder, type PaperTapeEntry } from "./paperTapeRecorder";
 import { WordGrouper } from "./paperTapeWordGrouping";
 import { JavelinSettings } from "./settings";
+import type { PaperTapeStore } from "./paperTapeStore";
 
 export type WordStatus =
   | { state: "unmodified" }
@@ -32,7 +33,10 @@ export interface TrackedDocumentChange {
   text: string;
 }
 
-const PERSISTED_ANCHORS_KEY = "javelin.paperTapeAnchors";
+export interface TrackedFileDeleteEvent {
+  uris: readonly string[];
+}
+
 const PERSIST_DEBOUNCE_MS = 500;
 const ANCHOR_SETTLE_MS = 200;
 
@@ -92,6 +96,10 @@ function defaultOnDidChangeTextDocument(listener: (e: TrackedDocumentChange[]) =
   });
 }
 
+function defaultOnDidDeleteFiles(listener: (e: TrackedFileDeleteEvent) => void): vscode.Disposable {
+  return vscode.workspace.onDidDeleteFiles((e) => listener({ uris: e.files.map((f) => f.toString()) }));
+}
+
 interface PendingAnchor {
   entries: readonly PaperTapeEntry[];
   documentUri: string | undefined;
@@ -108,6 +116,7 @@ export class PaperTapeWordTracker implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
   private readonly anchorListeners = new Set<(wordIds: readonly string[]) => void>();
   private readonly pendingAnchors = new Map<string, PendingAnchor>();
+  private readonly pendingPersistWordIds = new Set<string>();
   private readonly persister: DebouncedPersister = createDebouncedPersister(PERSIST_DEBOUNCE_MS, () =>
     this.persistAnchors()
   );
@@ -115,26 +124,35 @@ export class PaperTapeWordTracker implements vscode.Disposable {
   constructor(
     recorder: PaperTapeRecorder,
     private readonly settings: JavelinSettings | undefined,
-    private readonly workspaceState?: vscode.Memento,
+    private readonly store?: PaperTapeStore,
     private readonly getActiveEditor: () => { documentUri: string; cursorOffset: number } | undefined = defaultGetActiveEditor,
     private readonly getOpenDocument: (uri: string) => TrackedDocument | undefined = defaultGetOpenDocument,
     onDidChangeTextDocument: (
       listener: (changes: TrackedDocumentChange[]) => void
     ) => vscode.Disposable = defaultOnDidChangeTextDocument,
-    private readonly scheduleAnchorSettle: Scheduler = defaultScheduler
+    private readonly scheduleAnchorSettle: Scheduler = defaultScheduler,
+    onDidDeleteFiles: (listener: (e: TrackedFileDeleteEvent) => void) => vscode.Disposable = defaultOnDidDeleteFiles
   ) {
     if (this.persistenceEnabled()) {
       this.loadPersistedAnchors();
     }
 
     this.disposables.push(recorder.onWordUpdated(this.onWordUpdated));
+    this.disposables.push(recorder.onClear(this.onRecorderCleared));
     this.disposables.push(onDidChangeTextDocument(this.onDocumentChanged));
+    this.disposables.push(onDidDeleteFiles(this.onFilesDeleted));
 
     if (this.settings) {
+      let lastPersistPerWindow = this.settings.persistPerWindow;
       this.disposables.push(
         this.settings.onDidChange((snapshot) => {
-          // Turning the setting on mid-session persists what's already tracked, not just anchors created from now on.
-          if (snapshot.persistPerWindow) this.schedulePersist();
+          // Only react to the off->on transition, so anchors tracked before persistence
+          // was turned on for this window also get saved
+          if (snapshot.persistPerWindow && !lastPersistPerWindow) {
+            for (const wordId of this.anchors.keys()) this.pendingPersistWordIds.add(wordId);
+            this.schedulePersist();
+          }
+          lastPersistPerWindow = snapshot.persistPerWindow;
         })
       );
     }
@@ -144,10 +162,12 @@ export class PaperTapeWordTracker implements vscode.Disposable {
   getWordStatus(wordId: string): WordStatus | undefined {
     const anchor = this.anchors.get(wordId);
     if (!anchor) return undefined;
+    // Checked before the open-document lookup below, so a word deleted (e.g. its file was removed) while
+    // the document is closed still reports deleted, instead of falling through to the "can't verify" case.
+    if (anchor.length === 0) return { state: "deleted" };
 
     const doc = this.getOpenDocument(anchor.documentUri);
     if (!doc) return { state: "unmodified" }; // can't verify while the document isn't open - assume unchanged
-    if (anchor.length === 0) return { state: "deleted" };
 
     const live = doc.getText().slice(anchor.offset, anchor.offset + anchor.length);
     if (live === anchor.originalText) return { state: "unmodified" };
@@ -166,6 +186,7 @@ export class PaperTapeWordTracker implements vscode.Disposable {
     this.pendingAnchors.delete(wordId);
 
     this.setAnchor({ wordId, documentUri, origin: "inserted", offset, length: text.length, originalText: text });
+    this.pendingPersistWordIds.add(wordId);
     this.schedulePersist();
     this.notifyAnchorsChanged([wordId]);
   }
@@ -186,7 +207,7 @@ export class PaperTapeWordTracker implements vscode.Disposable {
   }
 
   private persistenceEnabled(): boolean {
-    return !!this.workspaceState && (!this.settings || this.settings.persistPerWindow);
+    return !!this.store && (!this.settings || this.settings.persistPerWindow);
   }
 
   private setAnchor(anchor: PaperTapeWordAnchor): void {
@@ -290,6 +311,7 @@ export class PaperTapeWordTracker implements vscode.Disposable {
       length: word.length,
       originalText: word.text,
     });
+    this.pendingPersistWordIds.add(wordId);
     this.schedulePersist();
     this.notifyAnchorsChanged([wordId]);
   }
@@ -308,9 +330,41 @@ export class PaperTapeWordTracker implements vscode.Disposable {
       }
     }
     if (touchedWordIds.length > 0) {
+      for (const wordId of touchedWordIds) this.pendingPersistWordIds.add(wordId);
       this.schedulePersist();
       this.notifyAnchorsChanged(touchedWordIds);
     }
+  };
+
+  /** Wipes every anchor when the recorder's tape is cleared, so stale anchors don't resurface for entries that no longer exist. */
+  private onRecorderCleared = (): void => {
+    for (const pending of this.pendingAnchors.values()) pending.cancel();
+    this.pendingAnchors.clear();
+    this.anchors.clear();
+    this.anchorsByDocument.clear();
+    this.pendingPersistWordIds.clear();
+    this.persister.cancel();
+    if (this.persistenceEnabled()) this.store!.clearAnchors();
+  };
+
+  /** Marks every anchor in a deleted file (or, for a deleted folder, every anchor nested under it) as deleted. */
+  private onFilesDeleted = (event: TrackedFileDeleteEvent): void => {
+    const touchedWordIds: string[] = [];
+    for (const deletedUri of event.uris) {
+      for (const [documentUri, wordIds] of this.anchorsByDocument) {
+        if (documentUri !== deletedUri && !documentUri.startsWith(`${deletedUri}/`)) continue;
+        for (const wordId of wordIds) {
+          const anchor = this.anchors.get(wordId);
+          if (!anchor || anchor.length === 0) continue;
+          anchor.length = 0;
+          touchedWordIds.push(wordId);
+        }
+      }
+    }
+    if (touchedWordIds.length === 0) return;
+    for (const wordId of touchedWordIds) this.pendingPersistWordIds.add(wordId);
+    this.schedulePersist();
+    this.notifyAnchorsChanged(touchedWordIds);
   };
 
   private notifyAnchorsChanged(wordIds: readonly string[]): void {
@@ -318,9 +372,9 @@ export class PaperTapeWordTracker implements vscode.Disposable {
   }
 
   private loadPersistedAnchors(): void {
-    if (!this.workspaceState) return;
-    const saved = this.workspaceState.get<PaperTapeWordAnchor[]>(PERSISTED_ANCHORS_KEY, []);
-    logInfo(`Loaded ${saved.length} persisted paper tape word anchors from workspaceState`);
+    if (!this.store) return;
+    const saved = this.store.loadAnchors();
+    logInfo(`Loaded ${saved.length} persisted paper tape word anchors from the store`);
     for (const anchor of saved) {
       this.setAnchor(anchor);
     }
@@ -332,17 +386,16 @@ export class PaperTapeWordTracker implements vscode.Disposable {
   }
 
   private async persistAnchors(): Promise<void> {
-    if (!this.workspaceState) return;
+    if (!this.store) return;
 
-    // Merge with disk by wordId (last writer wins) rather than overwrite, so this window's anchors don't clobber another window's.
-    const onDisk = this.workspaceState.get<PaperTapeWordAnchor[]>(PERSISTED_ANCHORS_KEY, []);
-    const merged = new Map(onDisk.map((a) => [a.wordId, a]));
-    for (const [wordId, anchor] of this.anchors) {
-      merged.set(wordId, anchor);
+    let persisted = 0;
+    for (const wordId of this.pendingPersistWordIds) {
+      const anchor = this.anchors.get(wordId);
+      if (!anchor) continue;
+      this.store.upsertAnchor(anchor);
+      persisted++;
     }
-
-    const all = [...merged.values()];
-    await this.workspaceState.update(PERSISTED_ANCHORS_KEY, all);
-    logDebug(`Persisted ${all.length} paper tape word anchors to workspaceState`);
+    this.pendingPersistWordIds.clear();
+    logDebug(`Persisted ${persisted} paper tape word anchors to the store`);
   }
 }

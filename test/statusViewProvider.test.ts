@@ -67,6 +67,10 @@ class FakeRecorder {
     return this.entries;
   }
 
+  getAllEntries(): readonly unknown[] {
+    return this.entries;
+  }
+
   clear(): void {
     this.clearCalls++;
   }

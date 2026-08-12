@@ -72,4 +72,11 @@ const Uri = {
   },
 };
 
-module.exports = { Disposable, EventEmitter, window, Uri };
+// No-op by default - tests that care about text-document or file-delete events inject their own listener capturer instead of relying on this.
+const workspace = {
+  textDocuments: [],
+  onDidChangeTextDocument: () => new Disposable(() => {}),
+  onDidDeleteFiles: () => new Disposable(() => {}),
+};
+
+module.exports = { Disposable, EventEmitter, window, Uri, workspace };
