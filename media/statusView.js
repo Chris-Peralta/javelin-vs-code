@@ -10,6 +10,7 @@
   const udevRuleText = document.getElementById("udevRuleText");
   const copyUdevRule = document.getElementById("copyUdevRule");
   const showButton = document.getElementById("showPaperTape");
+  const openSettingsButton = document.getElementById("openSettings");
   const lookupInput = document.getElementById("lookupInput");
   const lookupResults = document.getElementById("lookupResults");
   const toggleTimestamps = document.getElementById("toggleTimestamps");
@@ -63,6 +64,10 @@
 
   showButton.addEventListener("click", () => {
     vscode.postMessage({ type: "showPaperTape" });
+  });
+
+  openSettingsButton.addEventListener("click", () => {
+    vscode.postMessage({ type: "openSettings" });
   });
 
   function setSettings(

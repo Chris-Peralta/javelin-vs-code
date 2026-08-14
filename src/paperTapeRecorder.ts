@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
-import { createDebouncedPersister, type DebouncedPersister } from "./debouncedPersist";
+import { createDebouncer, type Debouncer } from "./debounce";
+import { Emitter } from "./emitter";
 import { JavelinHidDevice, type JavPaperTapeEventDetail } from "./javelinHidDevice";
 import { logDebug, logError, logInfo } from "./logger";
 import { JavelinSettings } from "./settings";
@@ -40,13 +41,11 @@ export class PaperTapeRecorder {
   private readonly entries: PaperTapeEntry[] = [];
   private nextId = 1;
   private lastTimestamp = 0;
-  private readonly listeners = new Set<(entry: PaperTapeEntry) => void>();
-  private readonly clearListeners = new Set<() => void>();
+  private readonly appendEmitter = new Emitter<PaperTapeEntry>();
+  private readonly clearEmitter = new Emitter();
   private readonly disposables: vscode.Disposable[] = [];
   private readonly pendingEntries: PaperTapeEntry[] = [];
-  private readonly persister: DebouncedPersister = createDebouncedPersister(PERSIST_DEBOUNCE_MS, () =>
-    this.persistEntries()
-  );
+  private readonly persister: Debouncer = createDebouncer(PERSIST_DEBOUNCE_MS, () => this.persistEntries());
   private readonly wordGrouper = new WordGrouper();
 
   constructor(
@@ -139,14 +138,12 @@ export class PaperTapeRecorder {
   }
 
   onAppend(listener: (entry: PaperTapeEntry) => void): vscode.Disposable {
-    this.listeners.add(listener);
-    return new vscode.Disposable(() => this.listeners.delete(listener));
+    return this.appendEmitter.event(listener);
   }
 
   /** Fires after `clear()` wipes the buffer/store, so listeners tracking derived state (e.g. word anchors, the open panel) can reset too. */
   onClear(listener: () => void): vscode.Disposable {
-    this.clearListeners.add(listener);
-    return new vscode.Disposable(() => this.clearListeners.delete(listener));
+    return this.clearEmitter.event(listener);
   }
 
   /** See `WordGrouper.onWordUpdated` - used by the word/anchor tracker to (re)anchor words in the document. */
@@ -164,18 +161,19 @@ export class PaperTapeRecorder {
       this.persister.cancel();
       this.store.clearEntries();
     }
-    for (const listener of this.clearListeners) listener();
+    this.clearEmitter.fire();
   }
 
   async dispose(): Promise<void> {
     if (this.device) {
       this.device.off("paper_tape", this.onPaperTape);
     }
-    this.listeners.clear();
     while (this.disposables.length) {
       this.disposables.pop()?.dispose();
     }
     await this.persister.flush();
+    this.appendEmitter.dispose();
+    this.clearEmitter.dispose();
   }
 
   private onPaperTape = (ev: CustomEvent<JavPaperTapeEventDetail>) => {
@@ -248,9 +246,7 @@ export class PaperTapeRecorder {
       this.schedulePersist();
     }
 
-    for (const listener of this.listeners) {
-      listener(entry);
-    }
+    this.appendEmitter.fire(entry);
   }
 
   private loadPersistedEntries(): void {

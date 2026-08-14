@@ -27,6 +27,11 @@
         "category": "Javelin"
       },
       {
+        "command": "javelin.openSettings",
+        "title": "Javelin: Open Settings",
+        "category": "Javelin"
+      },
+      {
         "command": "javelin.paperTape.jumpToWord",
         "title": "Javelin: Jump to Word",
         "category": "Javelin"
@@ -111,6 +116,22 @@
           "type": "webview"
         }
       ]
+    },
+    "configuration": {
+      "title": "Javelin",
+      "properties": {
+        "javelin.showOutlineAboveWords": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Show each word's raw stroke outline as small, gray text above it in the editor.\n\nIf the outline overlaps the line above, increase [`editor.lineHeight`](#editor.lineHeight)."
+        },
+        "javelin.paperTapeAnchorSettleMs": {
+          "type": "number",
+          "default": 50,
+          "minimum": 0,
+          "markdownDescription": "How long (in milliseconds) to wait after a stroke before locating its word in the document to anchor the paper tape to it. Adjust this if the editor stroke outlines or paper tape anchor positions are incorrect."
+        }
+      }
     }
   },
   "scripts": {

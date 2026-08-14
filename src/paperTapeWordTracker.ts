@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
-import { createDebouncedPersister, type DebouncedPersister } from "./debouncedPersist";
+import { createDebouncer, type Debouncer } from "./debounce";
+import { Emitter } from "./emitter";
 import { logDebug, logError, logInfo } from "./logger";
 import { PaperTapeRecorder, type PaperTapeEntry } from "./paperTapeRecorder";
 import { WordGrouper } from "./paperTapeWordGrouping";
@@ -38,13 +39,20 @@ export interface TrackedFileDeleteEvent {
 }
 
 const PERSIST_DEBOUNCE_MS = 500;
-const ANCHOR_SETTLE_MS = 200;
+const CONFIG_SECTION = "javelin";
+const ANCHOR_SETTLE_MS_SETTING = "paperTapeAnchorSettleMs";
+const DEFAULT_ANCHOR_SETTLE_MS = 50;
+
+/** User configurable debounce for anchor placement. */
+function anchorSettleMs(): number {
+  return vscode.workspace.getConfiguration(CONFIG_SECTION).get<number>(ANCHOR_SETTLE_MS_SETTING, DEFAULT_ANCHOR_SETTLE_MS);
+}
 
 /** Schedules `run` and returns a function that cancels it, if still pending. */
 export type Scheduler = (run: () => void) => () => void;
 
 function defaultScheduler(run: () => void): () => void {
-  const timer = setTimeout(run, ANCHOR_SETTLE_MS);
+  const timer = setTimeout(run, anchorSettleMs());
   return () => clearTimeout(timer);
 }
 
@@ -67,6 +75,11 @@ function exactSpanEndingAt(text: string, offset: number, length: number): { offs
   const start = Math.max(0, offset - length);
   if (start === offset) return undefined;
   return { offset: start, length: offset - start, text: text.slice(start, offset) };
+}
+
+function resolvedWordLength(text: string): number {
+  const trimmed = text.trim();
+  return trimmed.length > 0 ? trimmed.length : text.length;
 }
 
 function defaultGetActiveEditor(): { documentUri: string; cursorOffset: number } | undefined {
@@ -114,12 +127,10 @@ export class PaperTapeWordTracker implements vscode.Disposable {
   // Indexes anchors by document so onDocumentChanged only walks anchors touched by that document's edit.
   private readonly anchorsByDocument = new Map<string, Set<string>>();
   private readonly disposables: vscode.Disposable[] = [];
-  private readonly anchorListeners = new Set<(wordIds: readonly string[]) => void>();
+  private readonly anchorsChangedEmitter = new Emitter<readonly string[]>();
   private readonly pendingAnchors = new Map<string, PendingAnchor>();
   private readonly pendingPersistWordIds = new Set<string>();
-  private readonly persister: DebouncedPersister = createDebouncedPersister(PERSIST_DEBOUNCE_MS, () =>
-    this.persistAnchors()
-  );
+  private readonly persister: Debouncer = createDebouncer(PERSIST_DEBOUNCE_MS, () => this.persistAnchors());
 
   constructor(
     recorder: PaperTapeRecorder,
@@ -179,6 +190,17 @@ export class PaperTapeWordTracker implements vscode.Disposable {
     return this.anchors.get(wordId);
   }
 
+  getAnchorsForDocument(documentUri: string): readonly PaperTapeWordAnchor[] {
+    const wordIds = this.anchorsByDocument.get(documentUri);
+    if (!wordIds) return [];
+    const anchors: PaperTapeWordAnchor[] = [];
+    for (const wordId of wordIds) {
+      const anchor = this.anchors.get(wordId);
+      if (anchor) anchors.push(anchor);
+    }
+    return anchors;
+  }
+
   /** Directly anchors a word inserted via the paper tape's insert-before/after commands, at a position the caller already knows exactly. */
   registerInsertedAnchor(wordId: string, documentUri: string, offset: number, text: string): void {
     // Cancels the stale settle onWordUpdated already scheduled for this wordId's synthetic entry, so it can't clobber this anchor later.
@@ -193,8 +215,7 @@ export class PaperTapeWordTracker implements vscode.Disposable {
 
   /** Fires with the wordIds whose anchor (and so, possibly, `getWordStatus`) just changed. */
   onAnchorsChanged(listener: (wordIds: readonly string[]) => void): vscode.Disposable {
-    this.anchorListeners.add(listener);
-    return new vscode.Disposable(() => this.anchorListeners.delete(listener));
+    return this.anchorsChangedEmitter.event(listener);
   }
 
   async dispose(): Promise<void> {
@@ -204,6 +225,7 @@ export class PaperTapeWordTracker implements vscode.Disposable {
     for (const pending of this.pendingAnchors.values()) pending.cancel();
     this.pendingAnchors.clear();
     await this.persister.flush();
+    this.anchorsChangedEmitter.dispose();
   }
 
   private persistenceEnabled(): boolean {
@@ -270,14 +292,25 @@ export class PaperTapeWordTracker implements vscode.Disposable {
   private freezeSupersededPending(newWordId: string, documentUri: string | undefined): void {
     if (!documentUri) return;
     let editor: { documentUri: string; cursorOffset: number } | undefined;
+    // Rightmost offset already claimed, so a stale cursor can't collide with it
+    let floor: number | undefined;
+    for (const anchor of this.getAnchorsForDocument(documentUri)) {
+      if (anchor.wordId === newWordId) continue;
+      const end = anchor.offset + anchor.length;
+      floor = floor === undefined ? end : Math.max(floor, end);
+    }
     for (const [otherWordId, pending] of this.pendingAnchors) {
-      if (otherWordId === newWordId || pending.documentUri !== documentUri || pending.frozenCursorOffset !== undefined) {
+      if (otherWordId === newWordId || pending.documentUri !== documentUri) continue;
+      if (pending.frozenCursorOffset !== undefined) {
+        floor = floor === undefined ? pending.frozenCursorOffset : Math.max(floor, pending.frozenCursorOffset);
         continue;
       }
       editor ??= this.getActiveEditor();
-      if (editor && editor.documentUri === documentUri) {
-        pending.frozenCursorOffset = editor.cursorOffset;
-      }
+      if (!editor || editor.documentUri !== documentUri) continue;
+      const stale = floor !== undefined && editor.cursorOffset <= floor;
+      const frozenOffset = stale ? floor! + 1 + resolvedWordLength(WordGrouper.resolveText(pending.entries)) : editor.cursorOffset;
+      pending.frozenCursorOffset = frozenOffset;
+      floor = frozenOffset;
     }
   }
 
@@ -294,13 +327,16 @@ export class PaperTapeWordTracker implements vscode.Disposable {
     const doc = this.getOpenDocument(editor.documentUri);
     if (!doc) return;
 
+    const docText = doc.getText();
     const cursorOffset = frozenCursorOffset ?? editor.cursorOffset;
+    // Ensure cursorOffset is within the document's length
+    if (cursorOffset > docText.length) return;
     // Whitespace-only content (e.g. a bare newline stroke) has no word char to hunt for, so anchor the
     // exact span instead of searching backward past "trailing whitespace" the way a real word would.
     const word =
       trimmed.length > 0
-        ? spanEndingNear(doc.getText(), cursorOffset, trimmed.length)
-        : exactSpanEndingAt(doc.getText(), cursorOffset, text.length);
+        ? spanEndingNear(docText, cursorOffset, resolvedWordLength(text))
+        : exactSpanEndingAt(docText, cursorOffset, text.length);
     if (!word) return;
 
     this.setAnchor({
@@ -368,7 +404,7 @@ export class PaperTapeWordTracker implements vscode.Disposable {
   };
 
   private notifyAnchorsChanged(wordIds: readonly string[]): void {
-    for (const listener of this.anchorListeners) listener(wordIds);
+    this.anchorsChangedEmitter.fire(wordIds);
   }
 
   private loadPersistedAnchors(): void {

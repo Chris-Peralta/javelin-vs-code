@@ -1,5 +1,5 @@
-/** Debounced "persist this state" trigger, shared by PaperTapeRecorder and PaperTapeWordTracker. */
-export interface DebouncedPersister {
+/** Generic debouncer for fast steno stuff */
+export interface Debouncer {
   /** Schedules `run`, unless a run is already pending. */
   schedule(): void;
   /** If a run is pending, cancels its timer and executes it immediately. */
@@ -8,7 +8,7 @@ export interface DebouncedPersister {
   cancel(): void;
 }
 
-export function createDebouncedPersister(delayMs: number, run: () => Promise<void>): DebouncedPersister {
+export function createDebouncer(delayMs: number, run: () => Promise<void>): Debouncer {
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   return {

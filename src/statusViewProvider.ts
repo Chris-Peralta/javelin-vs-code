@@ -46,6 +46,8 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
           this.postSuggestions();
         } else if (message.type === "showPaperTape") {
           void vscode.commands.executeCommand("javelin.showPaperTape");
+        } else if (message.type === "openSettings") {
+          void vscode.commands.executeCommand("javelin.openSettings");
         } else if (message.type === "lookup") {
           void this.handleLookup(message.text ?? "", message.requestId ?? 0);
         } else if (message.type === "setShowTimestamps") {
@@ -285,6 +287,7 @@ export class StatusViewProvider implements vscode.WebviewViewProvider {
       </label>
     </div>
   </details>
+  <button id="openSettings" title="Open Javelin's settings">Open Settings</button>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

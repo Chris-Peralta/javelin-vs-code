@@ -219,6 +219,112 @@ test("dictating a second word before the first settles freezes the first word's 
   });
 });
 
+test("three words stroked faster than the document can catch up still get distinct, non-overlapping frozen offsets", () => {
+  const recorder = new FakeRecorder();
+  const doc = new FakeDocument("file:///doc.txt", "hello how");
+  let cursorOffset = doc.text.length; // right after "how"
+  const scheduled: { run: () => void; cancelled: boolean }[] = [];
+
+  const tracker = new PaperTapeWordTracker(
+    recorder as unknown as PaperTapeRecorder,
+    undefined,
+    undefined,
+    () => ({ documentUri: doc.uri, cursorOffset }),
+    (u) => (u === doc.uri ? doc : undefined),
+    () => ({ dispose: () => {} }),
+    (run) => {
+      const entryRecord = { run, cancelled: false };
+      scheduled.push(entryRecord);
+      return () => (entryRecord.cancelled = true);
+    }
+  );
+
+  // Quickly stroke 3 words to ensure their anchors don't overlap.
+  recorder.fire("w-how", [entry({ translation: "how" })]);
+  recorder.fire("w-are", [entry({ translation: "are" })]); // freezes "how" at 9
+  recorder.fire("w-you", [entry({ translation: "you" })]); // must freeze "are" past 9
+
+  assert.equal(scheduled.length, 3);
+
+  // Document catches up to all three words only now, before any settle timer fires.
+  doc.text = "hello how are you";
+  cursorOffset = doc.text.length;
+
+  scheduled[0].run(); // "how"'s settle
+  scheduled[1].run(); // "are"'s settle
+  scheduled[2].run(); // "you"'s settle
+
+  assert.deepEqual(tracker.getAnchor("w-how"), {
+    wordId: "w-how",
+    documentUri: "file:///doc.txt",
+    origin: "stroke",
+    offset: 6,
+    length: 3,
+    originalText: "how",
+  });
+  assert.deepEqual(tracker.getAnchor("w-are"), {
+    wordId: "w-are",
+    documentUri: "file:///doc.txt",
+    origin: "stroke",
+    offset: 10,
+    length: 3,
+    originalText: "are",
+  });
+  assert.deepEqual(tracker.getAnchor("w-you"), {
+    wordId: "w-you",
+    documentUri: "file:///doc.txt",
+    origin: "stroke",
+    offset: 14,
+    length: 3,
+    originalText: "you",
+  });
+});
+
+test("a word removed from pendingAnchors early (e.g. by registerInsertedAnchor) still counts toward the floor for later frozen words", () => {
+  const recorder = new FakeRecorder();
+  const doc = new FakeDocument("file:///doc.txt", "hello how");
+  let cursorOffset = doc.text.length; // right after "how"
+  const scheduled: { run: () => void; cancelled: boolean }[] = [];
+
+  const tracker = new PaperTapeWordTracker(
+    recorder as unknown as PaperTapeRecorder,
+    undefined,
+    undefined,
+    () => ({ documentUri: doc.uri, cursorOffset }),
+    (u) => (u === doc.uri ? doc : undefined),
+    () => ({ dispose: () => {} }),
+    (run) => {
+      const entryRecord = { run, cancelled: false };
+      scheduled.push(entryRecord);
+      return () => (entryRecord.cancelled = true);
+    }
+  );
+
+  recorder.fire("w-how", [entry({ translation: "how" })]);
+  recorder.fire("w-are", [entry({ translation: "are" })]); // freezes "how" at 9
+
+  // "how" gets anchored directly (e.g. by an insert-before/after command), dropping it out of
+  // pendingAnchors before its own settle timer ever fires.
+  tracker.registerInsertedAnchor("w-how", "file:///doc.txt", 6, "how");
+
+  recorder.fire("w-you", [entry({ translation: "you" })]); // must still freeze "are" past "how"'s claim at 9
+
+  doc.text = "hello how are you";
+  cursorOffset = doc.text.length;
+
+  scheduled[1].run(); // "are"'s settle ("how"'s own settle at index 0 was cancelled)
+  scheduled[2].run(); // "you"'s settle
+
+  assert.deepEqual(tracker.getAnchor("w-are"), {
+    wordId: "w-are",
+    documentUri: "file:///doc.txt",
+    origin: "stroke",
+    offset: 10,
+    length: 3,
+    originalText: "are",
+  });
+});
+
 test("registerInsertedAnchor cancels the settle timer the accompanying onWordUpdated call already scheduled", () => {
   // appendSynthetic fires onWordUpdated before registerInsertedAnchor sets the exact known position - the stale settle must not clobber it.
   const recorder = new FakeRecorder();
@@ -287,6 +393,21 @@ test("creates an anchor at the cursor position when a word closes, reporting unm
     originalText: "world",
   });
   assert.deepEqual(h.tracker.getWordStatus("w1"), { state: "unmodified" });
+});
+
+test("getAnchorsForDocument returns every anchor tracked for that document, and none from another", () => {
+  const h = createHarness("hello world");
+  h.setCursor(5);
+  h.recorder.fire("w1", [entry({ translation: "hello" })]);
+  h.setCursor(11);
+  h.recorder.fire("w2", [entry({ translation: "world" })]);
+
+  const anchors = h.tracker.getAnchorsForDocument("file:///doc.txt");
+  assert.deepEqual(
+    anchors.map((a) => a.wordId).sort(),
+    ["w1", "w2"]
+  );
+  assert.deepEqual(h.tracker.getAnchorsForDocument("file:///other.txt"), []);
 });
 
 test("a single stroke whose translation is multiple words anchors the whole phrase, not just the trailing word", () => {

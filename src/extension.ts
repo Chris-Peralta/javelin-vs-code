@@ -4,6 +4,7 @@ import * as path from "path";
 import { AppFocusTracker } from "./appFocusTracker";
 import { isHidSupported, JavelinHidDevice } from "./javelinHidDevice";
 import { logError, logInfo, setLogLevel } from "./logger";
+import { PaperTapeOutlineDecorator } from "./paperTapeOutlineDecorator";
 import { PaperTapePanel } from "./paperTapePanel";
 import { PaperTapeRecorder } from "./paperTapeRecorder";
 import { SqlitePaperTapeStore } from "./paperTapeSqliteStore";
@@ -16,6 +17,7 @@ import { SuggestionTracker } from "./suggestionTracker";
 let device: JavelinHidDevice | undefined;
 let recorder: PaperTapeRecorder | undefined;
 let wordTracker: PaperTapeWordTracker | undefined;
+let outlineDecorator: PaperTapeOutlineDecorator | undefined;
 let suggestionTracker: SuggestionTracker | undefined;
 let settings: JavelinSettings | undefined;
 let focusTracker: AppFocusTracker | undefined;
@@ -59,7 +61,10 @@ export function activate(context: vscode.ExtensionContext) {
     currentStore
   );
   recorder = currentRecorder;
-  wordTracker = new PaperTapeWordTracker(currentRecorder, currentSettings, currentStore);
+  const currentWordTracker = new PaperTapeWordTracker(currentRecorder, currentSettings, currentStore);
+  wordTracker = currentWordTracker;
+
+  outlineDecorator = new PaperTapeOutlineDecorator(currentRecorder, currentWordTracker);
 
   const currentSuggestionTracker = new SuggestionTracker(
     device,
@@ -86,6 +91,12 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand("javelin.openSettings", () => {
+      void vscode.commands.executeCommand("workbench.action.openSettings", "@ext:javelin-vs-code.javelin-vs-code");
+    })
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand("javelin.paperTape.jumpToWord", () => PaperTapePanel.jumpToSelected()),
     vscode.commands.registerCommand("javelin.paperTape.peekWord", () => PaperTapePanel.peekSelected()),
     vscode.commands.registerCommand("javelin.paperTape.editWord", () => PaperTapePanel.editSelected()),
@@ -97,6 +108,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 export async function deactivate(): Promise<void> {
   PaperTapePanel.disposeCurrent();
+  outlineDecorator?.dispose();
   await wordTracker?.dispose();
   await recorder?.dispose();
   suggestionTracker?.dispose();
