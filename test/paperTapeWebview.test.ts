@@ -260,14 +260,19 @@ test("clearing the selection posts a selectionChanged message with a null wordId
   assert.deepEqual(lastPostedMessage(postedMessages), { type: "selectionChanged", wordId: null });
 });
 
-test("clicking a row selects it and posts a peek wordAction", () => {
+test("clicking a row selects it and posts a peek wordAction before the selectionChanged message", () => {
   const { window, tape, postedMessages } = createPanel();
   appendEntry(window, "world", "TPHOULD", { wordId: "w1" });
   const [row] = visibleRows(tape);
 
   click(window, row);
 
-  assert.deepEqual(lastPostedMessage(postedMessages), { type: "wordAction", action: "peek", wordId: "w1" });
+  assert.deepEqual(JSON.parse(JSON.stringify(postedMessages.at(-2))), {
+    type: "wordAction",
+    action: "peek",
+    wordId: "w1",
+  });
+  assert.deepEqual(lastPostedMessage(postedMessages), { type: "selectionChanged", wordId: "w1" });
 });
 
 test("double-clicking a row posts an edit wordAction", () => {
