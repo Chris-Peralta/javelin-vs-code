@@ -303,8 +303,7 @@ test("a word removed from pendingAnchors early (e.g. by registerInsertedAnchor) 
   recorder.fire("w-how", [entry({ translation: "how" })]);
   recorder.fire("w-are", [entry({ translation: "are" })]); // freezes "how" at 9
 
-  // "how" gets anchored directly (e.g. by an insert-before/after command), dropping it out of
-  // pendingAnchors before its own settle timer ever fires.
+  // "how" gets anchored directly, dropping it out of pendingAnchors before its own settle timer fires.
   tracker.registerInsertedAnchor("w-how", "file:///doc.txt", 6, "how");
 
   recorder.fire("w-you", [entry({ translation: "you" })]); // must still freeze "are" past "how"'s claim at 9

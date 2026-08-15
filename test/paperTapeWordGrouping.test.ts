@@ -133,8 +133,7 @@ test("WordGrouper", async (t) => {
   });
 
   await t.test("a later glued stroke does not fold onto an earlier newline word", () => {
-    // If "world" arrived glued right after a newline, it must start its own word rather than
-    // silently attaching to (and becoming deletable/editable together with) the newline.
+    // A glued stroke right after a newline must start its own word, not attach to the newline.
     const grouper = new WordGrouper();
     const newline = makeEntry("R-R", "{^~|\n^}");
     const world = makeEntry("WORLD", "{^world}");

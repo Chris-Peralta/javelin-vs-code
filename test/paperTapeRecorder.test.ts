@@ -294,9 +294,7 @@ test("turning persistPerWindow on mid-session persists what was already buffered
 });
 
 test("turning persistPerWindow on mid-session does not discard entries persisted by an earlier session", async () => {
-  // Entries saved by an earlier session (persistPerWindow was on then) aren't loaded
-  // into memory since this session starts with the setting off; flipping it on
-  // mid-session must add to them, not overwrite with just this session's buffer.
+  // Flipping persistPerWindow on mid-session must add to entries from an earlier session, not overwrite them.
   const device = new FakeDevice();
   const store = new FakePaperTapeStore();
   store.appendEntry(persistedEntry({ id: 1, translation: "this", timestamp: 1 }));
@@ -318,9 +316,7 @@ test("turning persistPerWindow on mid-session does not discard entries persisted
 });
 
 test("a window persisting its own strokes does not overwrite another window's already-committed entries", async () => {
-  // The store is shared by every window on the workspace, like workspaceState was.
-  // Window B activates with persistPerWindow off so it doesn't eagerly load A's
-  // entry, then turns persistence on and must add to A's write, not overwrite it.
+  // Window B activates with persistPerWindow off, then turns it on and must add to A's write, not overwrite it.
   const disk = new FakePaperTapeStore();
 
   const deviceA = new FakeDevice();
@@ -477,8 +473,7 @@ test("getAllEntries() returns the full persisted history across a restart, beyon
   for (let i = 0; i < 5001; i++) {
     device.strike("TH", `word${i}`);
   }
-  // Flushes every pending entry to the store, then simulates reopening the window
-  // with a fresh recorder against that same (now persisted) store.
+  // Flushes every pending entry, then simulates reopening the window with a fresh recorder against that store.
   await recorder.dispose();
   const reopened = new PaperTapeRecorder(undefined, settings, () => true, store);
 

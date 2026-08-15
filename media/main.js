@@ -101,7 +101,7 @@
     tape.scrollTop = tape.scrollHeight;
   }
 
-  /** Inserts a page of older entries (oldest first) above everything currently loaded, keepingcontent stable instead of jumping. */
+  /** Inserts a page of older entries (oldest first) above everything currently loaded, keeping content stable instead of jumping. */
   function prependEntries(entries) {
     if (entries.length === 0) return;
 
@@ -119,7 +119,7 @@
     tape.scrollTop = previousScrollTop + (tape.scrollHeight - previousScrollHeight);
   }
 
-  /** If the loaded page doesn't fill the viewport, there's no scrollbar and trigger the next page - so keep pulling pages until it either fills up or history runs out. */
+  /** Keeps requesting pages until the tape fills the viewport (so there's a scrollbar) or history runs out. */
   function fillViewportIfNeeded() {
     if (hasMoreOlder && !loadingOlder && tape.scrollHeight <= tape.clientHeight) {
       requestOlderEntries();

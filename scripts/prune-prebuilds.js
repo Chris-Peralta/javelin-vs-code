@@ -1,7 +1,5 @@
 #!/usr/bin/env node
-// node-hid and better-sqlite3 each ship prebuilt native bindings for every
-// platform/arch in one npm package. Before packaging a platform-specific vsix,
-// strip the prebuilds that don't match the target.
+// Strips prebuilt native bindings for platforms/archs other than the target, before packaging a platform-specific vsix.
 const fs = require('fs');
 const path = require('path');
 

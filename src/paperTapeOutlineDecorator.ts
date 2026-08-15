@@ -32,7 +32,7 @@ function outlineTextDecoration(fontSizeEm: number): string {
 // Decorates each word from the paper tape
 export class PaperTapeOutlineDecorator implements vscode.Disposable {
   private readonly decorationType: vscode.TextEditorDecorationType;
-  // Track words here because it needs the word grouper drops outlines.
+  // Kept separately since the word grouper's resolved word text drops each stroke's outline.
   private readonly outlineStrokesByWordId = new Map<string, string[]>();
   private readonly disposables: vscode.Disposable[] = [];
   private readonly refresher: Debouncer = createDebouncer(REFRESH_DEBOUNCE_MS, async () => {

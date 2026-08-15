@@ -73,9 +73,7 @@ export class PaperTapeRecorder {
     let lastPersistPerWindow = this.settings.persistPerWindow;
     this.disposables.push(
       this.settings.onDidChange((snapshot) => {
-        // Only react to the off->on transition, so what was buffered before persistence
-        // was ever turned on for this window also gets saved, not just strokes recorded
-        // from this point on - and an unrelated setting change doesn't requeue everything.
+        // Only react to the off->on transition, so this backfills the pre-persistence buffer exactly once.
         if (snapshot.persistPerWindow && !lastPersistPerWindow) {
           this.pendingEntries.push(...this.entries);
           this.schedulePersist();
@@ -132,8 +130,7 @@ export class PaperTapeRecorder {
 
     const merged = [...persisted, ...pendingBeforeCursor].sort((a, b) => a.timestamp - b.timestamp);
     if (merged.length <= limit) return { entries: merged, hasMore: hasMoreOnDisk };
-    // Not-yet-flushed entries pushed this page over the limit - trim the oldest back off;
-    // they're still reachable via getOlderEntries from the new front of the page.
+    // Trim the oldest back off if pending entries pushed this page over the limit; still reachable via getOlderEntries.
     return { entries: merged.slice(merged.length - limit), hasMore: true };
   }
 
@@ -156,8 +153,7 @@ export class PaperTapeRecorder {
     this.entries.length = 0;
     this.pendingEntries.length = 0;
     if (this.settings.persistPerWindow && this.store) {
-      // Cancel rather than flush: a scheduled persist from just before clear() would
-      // otherwise re-append entries this clear is meant to remove.
+      // Cancel rather than flush, so a persist scheduled just before clear() can't re-append what clear() removes.
       this.persister.cancel();
       this.store.clearEntries();
     }

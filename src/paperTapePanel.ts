@@ -16,10 +16,7 @@ const PAGE_SIZE = 200;
  * whether this panel is open; this class just displays the buffered history and
  * live-streams new entries while it's open.
  *
- * Only the most recent page loads up front - older history (when persisted) is fetched
- * a page at a time as the webview scrolls up (see "loadOlder"/"olderEntries" below),
- * so opening the panel doesn't have to pull a whole (potentially large) history into
- * memory at once.
+ * Only the most recent page loads up front; older history is fetched a page at a time as the webview scrolls up.
  *
  * Filtering (hiding rows, and pausing new rows while any part of the panel is focused)
  * is handled entirely client-side in media/main.js.

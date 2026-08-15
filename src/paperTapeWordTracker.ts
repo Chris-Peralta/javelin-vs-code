@@ -157,8 +157,7 @@ export class PaperTapeWordTracker implements vscode.Disposable {
       let lastPersistPerWindow = this.settings.persistPerWindow;
       this.disposables.push(
         this.settings.onDidChange((snapshot) => {
-          // Only react to the off->on transition, so anchors tracked before persistence
-          // was turned on for this window also get saved
+          // Only react to the off->on transition, so this backfills anchors tracked before persistence turned on.
           if (snapshot.persistPerWindow && !lastPersistPerWindow) {
             for (const wordId of this.anchors.keys()) this.pendingPersistWordIds.add(wordId);
             this.schedulePersist();
@@ -173,8 +172,7 @@ export class PaperTapeWordTracker implements vscode.Disposable {
   getWordStatus(wordId: string): WordStatus | undefined {
     const anchor = this.anchors.get(wordId);
     if (!anchor) return undefined;
-    // Checked before the open-document lookup below, so a word deleted (e.g. its file was removed) while
-    // the document is closed still reports deleted, instead of falling through to the "can't verify" case.
+    // Checked before the open-document lookup, so a word deleted while its document is closed still reports deleted.
     if (anchor.length === 0) return { state: "deleted" };
 
     const doc = this.getOpenDocument(anchor.documentUri);
@@ -331,8 +329,7 @@ export class PaperTapeWordTracker implements vscode.Disposable {
     const cursorOffset = frozenCursorOffset ?? editor.cursorOffset;
     // Ensure cursorOffset is within the document's length
     if (cursorOffset > docText.length) return;
-    // Whitespace-only content (e.g. a bare newline stroke) has no word char to hunt for, so anchor the
-    // exact span instead of searching backward past "trailing whitespace" the way a real word would.
+    // Whitespace-only content has no word char to hunt for, so anchor the exact span instead of searching backward.
     const word =
       trimmed.length > 0
         ? spanEndingNear(docText, cursorOffset, resolvedWordLength(text))

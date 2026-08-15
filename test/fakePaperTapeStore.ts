@@ -3,11 +3,7 @@ import type { PaperTapeWordAnchor } from "../src/paperTapeWordTracker";
 import type { PaperTapeStore } from "../src/paperTapeStore";
 import { entryIdentity } from "../src/paperTapeWordGrouping";
 
-/**
- * Minimal stand-in for a real PaperTapeStore, backed by in-memory maps.
- * Two instances built from the same `shared` argument reuse the same backing maps,
- * modeling two windows with separate connections to the same underlying db file.
- */
+/** Minimal stand-in for a real PaperTapeStore; instances sharing a `shared` argument model two windows on the same db file. */
 export class FakePaperTapeStore implements PaperTapeStore {
   private readonly entries: Map<string, PaperTapeEntry>;
   private readonly anchors: Map<string, PaperTapeWordAnchor>;

@@ -3,8 +3,7 @@ import type { PaperTapeEntry } from "./paperTapeRecorder";
 const COMMAND_PATTERN = /\{:[^}]*\}/;
 const KEYBOARD_PATTERN = /\{#[^}]*\}/;
 const GLUE_PREFIX_PATTERN = /^\{\^[^}]*\}/;
-// A {#...} key combo that presses Return/Enter - unlike other key combos (Escape, Tab, ...) this one
-// inserts a real newline into the document, so it's tracked as a word like any other dictated text.
+// Unlike other key combos, a {#...} combo pressing Return/Enter inserts a real newline, so it's tracked as a word.
 const RETURN_KEY_PATTERN = /^\{#[^}]*\b(?:Return|Enter)\b[^}]*\}/i;
 
 /** Identifies an entry by content, since `id` gets renumbered whenever entries are merged/persisted. */
@@ -84,9 +83,7 @@ export class WordGrouper {
     }
 
     const glued = GLUE_PREFIX_PATTERN.test(entry.translation);
-    // A bare newline (e.g. {^~|\n^} or {#Return}) has no dictated word chars of its own, so it must
-    // neither continue a run nor stay open for a later stroke to glue onto - otherwise deleting/editing
-    // it would consume the neighboring word instead.
+    // A bare newline must never continue or stay open for a run, or deleting/editing it would consume the neighboring word.
     const isBareNewline = /^\n+$/.test(resolveLiteral(entry.translation));
     const continuesRun = this.openRun.length > 0 && !isBareNewline && (entry.undo > 0 || glued);
     if (!continuesRun) {
