@@ -247,7 +247,8 @@ export class PaperTapePanel {
       preserveFocus: !moveFocus,
       preview: true,
     });
-    editor.selection = new vscode.Selection(end, end);
+    // Jump moves the cursor to the word's end; peek highlights the whole word.
+    editor.selection = moveFocus ? new vscode.Selection(end, end) : new vscode.Selection(start, end);
     editor.revealRange(new vscode.Range(start, end), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
   }
 

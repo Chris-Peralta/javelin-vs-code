@@ -147,6 +147,9 @@
       selectedRow.setAttribute("aria-selected", "true");
       tape.setAttribute("aria-activedescendant", selectedRow.id);
       selectedRow.scrollIntoView({ block: "nearest" });
+      if (selectedRow.dataset.wordId) {
+        vscode.postMessage({ type: "wordAction", action: "peek", wordId: selectedRow.dataset.wordId });
+      }
     } else {
       tape.removeAttribute("aria-activedescendant");
     }
@@ -343,9 +346,6 @@
     const row = target.closest(".row");
     if (row && !row.classList.contains("hidden")) {
       setSelectedRow(row);
-      if (row.dataset.wordId) {
-        vscode.postMessage({ type: "wordAction", action: "peek", wordId: row.dataset.wordId });
-      }
     }
   });
 

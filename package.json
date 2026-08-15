@@ -74,11 +74,6 @@
         "when": "javelinPaperTapeFocused"
       },
       {
-        "command": "javelin.paperTape.peekWord",
-        "key": "shift+enter",
-        "when": "javelinPaperTapeFocused"
-      },
-      {
         "command": "javelin.paperTape.editWord",
         "key": "f2",
         "when": "javelinPaperTapeFocused"
