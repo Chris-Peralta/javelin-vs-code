@@ -2,7 +2,7 @@
   "name": "javelin-vs-code",
   "displayName": "Javelin Paper Tape",
   "description": "Live paper tape viewer for Javelin steno keyboards",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "private": true,
   "publisher": "javelin-vs-code",
   "repository": {
@@ -118,7 +118,12 @@
         "javelin.occurrencesHighlight": {
           "type": "string",
           "default": "inherit",
-          "enum": ["inherit", "off", "singleFile", "multiFile"],
+          "enum": [
+            "inherit",
+            "off",
+            "singleFile",
+            "multiFile"
+          ],
           "enumDescriptions": [
             "Leave editor.occurrencesHighlight as configured.",
             "Turn off occurrences highlighting.",
