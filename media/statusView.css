@@ -85,7 +85,8 @@ body {
   background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
 }
 
-#showPaperTape {
+#showPaperTape,
+#openSettings {
   width: 100%;
   padding: 6px 10px;
   background: var(--vscode-button-background);
@@ -95,8 +96,15 @@ body {
   cursor: pointer;
 }
 
-#showPaperTape:hover {
+#showPaperTape:hover,
+#openSettings:hover {
   background: var(--vscode-button-hoverBackground);
+}
+
+#openSettings {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--vscode-panel-border);
 }
 
 .accordion {

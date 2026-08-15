@@ -25,6 +25,73 @@
         "command": "javelin.showPaperTape",
         "title": "Javelin: Show Paper Tape",
         "category": "Javelin"
+      },
+      {
+        "command": "javelin.openSettings",
+        "title": "Javelin: Open Settings",
+        "category": "Javelin"
+      },
+      {
+        "command": "javelin.paperTape.jumpToWord",
+        "title": "Javelin: Jump to Word",
+        "category": "Javelin"
+      },
+      {
+        "command": "javelin.paperTape.peekWord",
+        "title": "Javelin: Peek Word",
+        "category": "Javelin"
+      },
+      {
+        "command": "javelin.paperTape.editWord",
+        "title": "Javelin: Edit Word",
+        "category": "Javelin"
+      },
+      {
+        "command": "javelin.paperTape.deleteWord",
+        "title": "Javelin: Delete Word",
+        "category": "Javelin"
+      },
+      {
+        "command": "javelin.paperTape.insertBefore",
+        "title": "Javelin: Insert Word Before",
+        "category": "Javelin"
+      },
+      {
+        "command": "javelin.paperTape.insertAfter",
+        "title": "Javelin: Insert Word After",
+        "category": "Javelin"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "javelin.showPaperTape",
+        "key": "ctrl+alt+p",
+        "mac": "cmd+alt+p"
+      },
+      {
+        "command": "javelin.paperTape.jumpToWord",
+        "key": "enter",
+        "when": "javelinPaperTapeFocused"
+      },
+      {
+        "command": "javelin.paperTape.editWord",
+        "key": "f2",
+        "when": "javelinPaperTapeFocused"
+      },
+      {
+        "command": "javelin.paperTape.deleteWord",
+        "key": "delete",
+        "when": "javelinPaperTapeFocused"
+      },
+      {
+        "command": "javelin.paperTape.insertBefore",
+        "key": "ctrl+enter",
+        "when": "javelinPaperTapeFocused"
+      },
+      {
+        "command": "javelin.paperTape.insertAfter",
+        "key": "ctrl+shift+enter",
+        "when": "javelinPaperTapeFocused"
       }
     ],
     "viewsContainers": {
@@ -44,6 +111,41 @@
           "type": "webview"
         }
       ]
+    },
+    "configuration": {
+      "title": "Javelin",
+      "properties": {
+        "javelin.occurrencesHighlight": {
+          "type": "string",
+          "default": "inherit",
+          "enum": ["inherit", "off", "singleFile", "multiFile"],
+          "enumDescriptions": [
+            "Leave editor.occurrencesHighlight as configured.",
+            "Turn off occurrences highlighting.",
+            "Highlight occurrences in the active file only.",
+            "Highlight occurrences across all open files."
+          ],
+          "markdownDescription": "Use this to stop highlighting multiple words occurrences when selecting a word in the paper tape. Override for [`editor.occurrencesHighlight`](#editor.occurrencesHighlight). Written to your user settings, so it outlives disabling/uninstalling Javelin unless set back to `inherit` first."
+        },
+        "javelin.paperTapeAnchorSettleMs": {
+          "type": "number",
+          "default": 50,
+          "minimum": 0,
+          "markdownDescription": "How long (in milliseconds) to wait after a stroke before locating its word in the document to anchor the paper tape to it. Adjust this if the editor stroke outlines or paper tape anchor positions are incorrect."
+        },
+        "javelin.showOutlineAboveWords": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Show each word's raw stroke outline as small, gray text above it in the editor.\n\nIf the outline overlaps the line above, increase [`javelin.lineHeight`](#javelin.lineHeight)."
+        },
+        "javelin.lineHeight": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 150,
+          "markdownDescription": "Override for [`editor.lineHeight`](#editor.lineHeight), set to 2 when using `javelin.showOutlineAboveWords`. Set to `0` to leave `editor.lineHeight` as configured. Written to your user settings, so it outlives disabling/uninstalling Javelin unless set back to `0` first."
+        }
+      }
     }
   },
   "scripts": {
@@ -54,10 +156,12 @@
     "test": "node --require tsx/cjs --require ./test/register.cjs --test \"test/**/*.test.ts\""
   },
   "dependencies": {
+    "better-sqlite3": "^13.0.3",
     "js-yaml": "^5.2.2",
     "node-hid": "^3.4.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "@types/jsdom": "^30.0.0",
     "@types/node": "^26.1.2",
     "@types/vscode": "^1.85.0",

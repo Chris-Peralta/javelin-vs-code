@@ -11,6 +11,7 @@ function entry(overrides: Partial<PaperTapeEntry> = {}): PaperTapeEntry {
     translation: "this",
     undo: 0,
     timestamp: 0,
+    kind: "text",
     ...overrides,
   };
 }

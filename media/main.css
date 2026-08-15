@@ -83,6 +83,51 @@ body {
   color: var(--vscode-list-activeSelectionForeground);
 }
 
+/* Non-text strokes don't land in the document, so they're greyed out to set them apart from words. */
+.row.kind-command,
+.row.kind-keyboard,
+.row.kind-undo {
+  opacity: 0.55;
+}
+
+/* Status indicator only - the tape entry itself never changes, even once its word is edited or deleted. */
+.row.status-edited .col-translation {
+  box-shadow: inset 3px 0 var(--vscode-editorWarning-foreground, var(--vscode-descriptionForeground));
+  padding-left: 5px;
+}
+
+.row.status-deleted .col-translation {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+/* Manually inserted, with no corresponding stroke - set apart with italics and a "+" tag. */
+.row.synthetic .col-translation {
+  font-style: italic;
+}
+
+.inserted-badge {
+  margin-left: 6px;
+  font-size: 0.75em;
+  color: var(--vscode-textLink-foreground);
+}
+
+/* Ephemeral row shown while typing an insert-before/after interlineation; removed once committed or cancelled. */
+.row-inserting {
+  border: 1px dashed var(--vscode-panel-border);
+}
+
+.inline-edit {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 1px 4px;
+  font: inherit;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-focusBorder);
+  border-radius: 2px;
+}
+
 .col-timestamp,
 .col-outline,
 .col-translation {

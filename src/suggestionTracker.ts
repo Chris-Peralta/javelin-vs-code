@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { Emitter } from "./emitter";
 import { JavelinHidDevice, type JavSuggestionEventDetail } from "./javelinHidDevice";
 import { logDebug, logInfo } from "./logger";
 import { JavelinSettings } from "./settings";
@@ -21,7 +22,7 @@ const MAX_ENTRIES = 200;
 export class SuggestionTracker {
   private readonly entries: SuggestionEntry[] = [];
   private nextId = 1;
-  private readonly listeners = new Set<(entry: SuggestionEntry) => void>();
+  private readonly appendEmitter = new Emitter<SuggestionEntry>();
 
   constructor(
     private readonly device: JavelinHidDevice | undefined,
@@ -38,15 +39,14 @@ export class SuggestionTracker {
   }
 
   onAppend(listener: (entry: SuggestionEntry) => void): vscode.Disposable {
-    this.listeners.add(listener);
-    return new vscode.Disposable(() => this.listeners.delete(listener));
+    return this.appendEmitter.event(listener);
   }
 
   dispose(): void {
     if (this.device) {
       this.device.off("suggestion", this.onSuggestion);
     }
-    this.listeners.clear();
+    this.appendEmitter.dispose();
   }
 
   private onSuggestion = (ev: CustomEvent<JavSuggestionEventDetail>) => {
@@ -72,8 +72,6 @@ export class SuggestionTracker {
       this.entries.shift();
     }
 
-    for (const listener of this.listeners) {
-      listener(entry);
-    }
+    this.appendEmitter.fire(entry);
   };
 }
