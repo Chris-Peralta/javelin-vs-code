@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
 import { AppFocusTracker } from "./appFocusTracker";
+import { EditorSettingOverrideSync } from "./editorSettingOverrides";
 import { isHidSupported, JavelinHidDevice } from "./javelinHidDevice";
 import { logError, logInfo, setLogLevel } from "./logger";
 import { PaperTapeOutlineDecorator } from "./paperTapeOutlineDecorator";
@@ -22,6 +23,7 @@ let suggestionTracker: SuggestionTracker | undefined;
 let settings: JavelinSettings | undefined;
 let focusTracker: AppFocusTracker | undefined;
 let paperTapeStore: PaperTapeStore | undefined;
+let editorSettingOverrideSync: EditorSettingOverrideSync | undefined;
 
 /** Workspace-scoped - shared by every window on this workspace. Falls back to global storage for windows with no workspace open. */
 function openPaperTapeStore(context: vscode.ExtensionContext): PaperTapeStore | undefined {
@@ -65,6 +67,7 @@ export function activate(context: vscode.ExtensionContext) {
   wordTracker = currentWordTracker;
 
   outlineDecorator = new PaperTapeOutlineDecorator(currentRecorder, currentWordTracker);
+  editorSettingOverrideSync = new EditorSettingOverrideSync(context.globalState);
 
   const currentSuggestionTracker = new SuggestionTracker(
     device,
@@ -109,6 +112,7 @@ export function activate(context: vscode.ExtensionContext) {
 export async function deactivate(): Promise<void> {
   PaperTapePanel.disposeCurrent();
   outlineDecorator?.dispose();
+  editorSettingOverrideSync?.dispose();
   await wordTracker?.dispose();
   await recorder?.dispose();
   suggestionTracker?.dispose();

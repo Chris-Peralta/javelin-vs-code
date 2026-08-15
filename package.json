@@ -120,16 +120,35 @@
     "configuration": {
       "title": "Javelin",
       "properties": {
-        "javelin.showOutlineAboveWords": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "Show each word's raw stroke outline as small, gray text above it in the editor.\n\nIf the outline overlaps the line above, increase [`editor.lineHeight`](#editor.lineHeight)."
+        "javelin.occurrencesHighlight": {
+          "type": "string",
+          "default": "inherit",
+          "enum": ["inherit", "off", "singleFile", "multiFile"],
+          "enumDescriptions": [
+            "Leave editor.occurrencesHighlight as configured.",
+            "Turn off occurrences highlighting.",
+            "Highlight occurrences in the active file only.",
+            "Highlight occurrences across all open files."
+          ],
+          "markdownDescription": "Use this to stop highlighting multiple words occurrences when selecting a word in the paper tape. Override for [`editor.occurrencesHighlight`](#editor.occurrencesHighlight). Written to your user settings, so it outlives disabling/uninstalling Javelin unless set back to `inherit` first."
         },
         "javelin.paperTapeAnchorSettleMs": {
           "type": "number",
           "default": 50,
           "minimum": 0,
           "markdownDescription": "How long (in milliseconds) to wait after a stroke before locating its word in the document to anchor the paper tape to it. Adjust this if the editor stroke outlines or paper tape anchor positions are incorrect."
+        },
+        "javelin.showOutlineAboveWords": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Show each word's raw stroke outline as small, gray text above it in the editor.\n\nIf the outline overlaps the line above, increase [`javelin.lineHeight`](#javelin.lineHeight)."
+        },
+        "javelin.lineHeight": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 150,
+          "markdownDescription": "Override for [`editor.lineHeight`](#editor.lineHeight), set to 2 when using `javelin.showOutlineAboveWords`. Set to `0` to leave `editor.lineHeight` as configured. Written to your user settings, so it outlives disabling/uninstalling Javelin unless set back to `0` first."
         }
       }
     }
