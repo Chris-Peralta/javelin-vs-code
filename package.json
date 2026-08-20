@@ -149,6 +149,13 @@
           "minimum": 0,
           "maximum": 150,
           "markdownDescription": "Override for [`editor.lineHeight`](#editor.lineHeight), set to 2 when using `javelin.showOutlineAboveWords`. Set to `0` to leave `editor.lineHeight` as configured. Written to your user settings, so it outlives disabling/uninstalling Javelin unless set back to `0` first."
+        },
+        "javelin.compatibilityMode": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 99,
+          "markdownDescription": "Set the keyboard's protocol to compatibility mode with this id, for host software that doesn't work with the default protocol. Set to `0` to use the default protocol instead. Pushed to the device on connect and whenever this setting changes."
         }
       }
     }

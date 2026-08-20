@@ -642,6 +642,9 @@ export class JavelinHidDevice extends EventTarget {
 
   private sendCommandLock = new Lock();
 
+  /** Active `sendCommand` response handler, if any - node-hid allows only one "data" listener, so commands share it instead of attaching their own. */
+  private pendingCommandHandler: ((data: Buffer) => void) | undefined;
+
   /** How often to poll for HID devices being plugged/unplugged, in ms. */
   private hotplugPollIntervalMs = 1000;
   private hotplugTimer: ReturnType<typeof setInterval> | undefined;
@@ -783,7 +786,7 @@ export class JavelinHidDevice extends EventTarget {
 
           // Check for double newline
           if (responseBuffer.includes("\n\n")) {
-            device.off("data", handler);
+            this.pendingCommandHandler = undefined;
             this.off("disconnected", disconnectHandler);
 
             // trim responceBuffer
@@ -795,11 +798,11 @@ export class JavelinHidDevice extends EventTarget {
           }
         };
 
-        device.on("data", handler);
+        this.pendingCommandHandler = handler;
 
         const disconnectHandler = () =>{
           logWarn("Device disconnected while running command");
-          device.off("data", handler);
+          this.pendingCommandHandler = undefined;
           this.off("disconnected", disconnectHandler);
           reject(new Error("Device disconnected"));
         }
@@ -808,7 +811,7 @@ export class JavelinHidDevice extends EventTarget {
 
         if (timeout && timeout > 0) {
           timer = setTimeout(() => {
-            device.off("data", handler);
+            this.pendingCommandHandler = undefined;
             this.off("disconnected", disconnectHandler);
             reject(new Error("Command timed out"));
           }, timeout);
@@ -826,7 +829,7 @@ export class JavelinHidDevice extends EventTarget {
               // node-hid requires a leading Report Id byte (0 since this device doesn't use numbered reports)
               await device.write([0, ...fullPacket]);
             } catch (err) {
-              device.off("data", handler);
+              this.pendingCommandHandler = undefined;
               this.off("disconnected", disconnectHandler);
               reject(err);
               return;
@@ -978,6 +981,7 @@ export class JavelinHidDevice extends EventTarget {
 
       this.device = device;
       this.deviceInfo = info;
+      device.on("data", this.handleRawData);
 
       device.on("error", (err) => {
         logError("HID device error:", err);
@@ -1033,40 +1037,39 @@ export class JavelinHidDevice extends EventTarget {
   private eventDecoder = new TextDecoder();
   private eventBuffer = "";
 
-  // Call once after device is connected/opened
-  private startEventListener() {
-    if (!this.device) return;
+  /** The device's sole "data" listener - fans out to event parsing and any pending `sendCommand` response. */
+  private handleRawData = (data: Buffer) => {
+    this.pendingCommandHandler?.(data);
+    this.handleEventData(data);
+  };
 
-    const handler = (data: Buffer) => {
-      const chunk = this.eventDecoder.decode(data);
-      this.eventBuffer += chunk;
+  private handleEventData(data: Buffer) {
+    const chunk = this.eventDecoder.decode(data);
+    this.eventBuffer += chunk;
 
-      // Split into complete lines
-      const lines = this.eventBuffer.split("\n\n");
-      this.eventBuffer = lines.pop() ?? ""; // save incomplete tail
-      for (const rawLine of lines) {
-        const line = rawLine.replace(/^\x00+/, ''); // This caused so much debugging
-        if (line.startsWith("EV ")) {
-          const dataPart = line.slice(3).trim();
-          logDebug("Raw Javelin event:", dataPart);
-          try {
-            const ev = parseData(dataPart) as { e: string; [key: string]: unknown };
+    // Split into complete lines
+    const lines = this.eventBuffer.split("\n\n");
+    this.eventBuffer = lines.pop() ?? ""; // save incomplete tail
+    for (const rawLine of lines) {
+      const line = rawLine.replace(/^\x00+/, ''); // device pads lines with leading NUL bytes
+      if (line.startsWith("EV ")) {
+        const dataPart = line.slice(3).trim();
+        logDebug("Raw Javelin event:", dataPart);
+        try {
+          const ev = parseData(dataPart) as { e: string; [key: string]: unknown };
 
-            const decoded = decodeJavEvent(ev);
-            if (decoded) {
-              this.emit(decoded.event, decoded.detail);
-            } else {
-              logWarn("Failed to parse event data:", ev);
-            }
-
-          } catch (err) {
-            logWarn("Failed to parse event data:", dataPart, err);
+          const decoded = decodeJavEvent(ev);
+          if (decoded) {
+            this.emit(decoded.event, decoded.detail);
+          } else {
+            logWarn("Failed to parse event data:", ev);
           }
+
+        } catch (err) {
+          logWarn("Failed to parse event data:", dataPart, err);
         }
       }
-    };
-
-    this.device.on("data", handler);
+    }
   }
 
   /**
@@ -1091,9 +1094,6 @@ export class JavelinHidDevice extends EventTarget {
     if (!this.connectionId){
       await this.getConnectionId();
     }
-
-    // Enable events
-    this.startEventListener();
 
     if (this.enabledEvents.length > 0) {
       this.sendCommand(`enable_events ${this.enabledEvents.join(" ")}`).catch(err => {

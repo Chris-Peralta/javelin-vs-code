@@ -73,10 +73,31 @@ const Uri = {
 };
 
 // No-op by default - tests that care about text-document or file-delete events inject their own listener capturer instead of relying on this.
+const configChangeEmitter = new EventEmitter();
+const configValues = new Map();
 const workspace = {
   textDocuments: [],
   onDidChangeTextDocument: () => new Disposable(() => {}),
   onDidDeleteFiles: () => new Disposable(() => {}),
+  onDidChangeConfiguration: configChangeEmitter.event,
+  getConfiguration(section) {
+    return {
+      get(key, defaultValue) {
+        const full = section ? `${section}.${key}` : key;
+        return configValues.has(full) ? configValues.get(full) : defaultValue;
+      },
+    };
+  },
+  // Test-only: sets a config value read by getConfiguration(); doesn't itself fire a change event.
+  __setConfig(fullKey, value) {
+    configValues.set(fullKey, value);
+  },
+  // Test-only: fires onDidChangeConfiguration as if `fullKey` just changed.
+  __fireConfigChange(fullKey) {
+    configChangeEmitter.fire({
+      affectsConfiguration: (check) => fullKey === check || fullKey.startsWith(check + ".") || check.startsWith(fullKey + "."),
+    });
+  },
 };
 
 module.exports = { Disposable, EventEmitter, window, Uri, workspace };

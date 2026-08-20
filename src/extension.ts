@@ -4,6 +4,7 @@ import * as path from "path";
 import { AppFocusTracker } from "./appFocusTracker";
 import { EditorSettingOverrideSync } from "./editorSettingOverrides";
 import { isHidSupported, JavelinHidDevice } from "./javelinHidDevice";
+import { KeyboardProtocolSync } from "./keyboardProtocolSync";
 import { logError, logInfo, setLogLevel } from "./logger";
 import { PaperTapeOutlineDecorator } from "./paperTapeOutlineDecorator";
 import { PaperTapePanel } from "./paperTapePanel";
@@ -24,6 +25,7 @@ let settings: JavelinSettings | undefined;
 let focusTracker: AppFocusTracker | undefined;
 let paperTapeStore: PaperTapeStore | undefined;
 let editorSettingOverrideSync: EditorSettingOverrideSync | undefined;
+let keyboardProtocolSync: KeyboardProtocolSync | undefined;
 
 /** Workspace-scoped - shared by every window on this workspace. Falls back to global storage for windows with no workspace open. */
 function openPaperTapeStore(context: vscode.ExtensionContext): PaperTapeStore | undefined {
@@ -48,6 +50,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   if (isHidSupported()) {
     device = new JavelinHidDevice();
+    keyboardProtocolSync = new KeyboardProtocolSync(device);
   }
 
   const currentFocusTracker = new AppFocusTracker(context);
@@ -113,6 +116,7 @@ export async function deactivate(): Promise<void> {
   PaperTapePanel.disposeCurrent();
   outlineDecorator?.dispose();
   editorSettingOverrideSync?.dispose();
+  keyboardProtocolSync?.dispose();
   await wordTracker?.dispose();
   await recorder?.dispose();
   suggestionTracker?.dispose();
